@@ -1,11 +1,12 @@
 const spider = require( '@cobd/spider' );
+const curlFetch = require( './curl_fetch' );
 
 const feeds = require( '../mappings/feeds.json' );
 
 module.exports = {
 getArticleForURL: async function( url )
 {
-let $article = await spider.getHTMLForURL( url );
+let $article = await curlFetch.getHTMLForURL( url );
 
 return {
 audio: $article( '#tts' ).find( 'a' ).first().attr( 'href' )
