@@ -1,40 +1,32 @@
-# Project Details
+# Talkshow
 
-A TTS microservice built with **FastAPI** (Python). It features a plugin architecture for
-TTS engines, data sources, and output formatters, with built-in audio caching and
-auto-generated API documentation (Swagger UI at `/docs`, ReDoc at `/redoc`).
+FastAPI (Python) TTS microservice. Plugin architecture for TTS engines, data sources, and output formatters. Audio caching. Auto-generated docs at `/docs` and `/redoc`.
 
-## Requirements
+## Architecture
 
-1. **Plugin system** — Folder-based plugin architecture for three plugin types: **sources**,
-   **TTS engines**, and **outputs**. External plugins can implement the project's abstract
-   interfaces and be dropped into the plugin directories.
+- **Three plugin types:** `sources/`, `tts/`, `outputs/` — each extends an ABC in `app/plugins/base.py`, auto-discovered by `app/plugins/loader.py`.
+- **Caching lives in plugins**, not core. Path: `cache/<plugin>/<language>/<voice>/<sha512-128>-<rate>-<pitch>.wav`. Serve from cache when file exists.
+- **Query-takes-precedence-over-body** on all POST endpoints that accept both.
 
-2. **Microsoft TTS plugin** — Uses the Azure Cognitive Services Speech SDK
-   (`azure-cognitiveservices-speech-sdk`) with configurable voice, language, and text.
+## Endpoints
 
-3. **Text input** — Text can be passed via the `text` query parameter and/or `text` body
-   parameter (JSON). If both are provided, they are combined with a space, query first.
+| Endpoint | Params | Notes |
+|---|---|---|
+| `/speak` (GET/POST) | `text`, `voice`, `language`, `rate`, `pitch`, `engine` | POST combines query+body text (space-joined, query first). Default engine: `azure`. |
+| `/source` (GET/POST) | `name`, `url`, `articleOffset` | Fetches a single article from a source plugin. |
+| `/source/list` (GET/POST) | `name`, `url` | Lists available articles (header metadata only). |
+| `/output/{format_name}` (GET/POST) | `source_name`, `source_url`, `voice`, `language`, `articleOffset`, `mode` | Fetches articles from a source and renders via an output plugin. |
 
-4. **Datasource config** — The following query/body params configure a datasource plugin:
-   `name`, `url`, `articleOffset`.
+## Mode parameter
 
-5. **`.gitignore`** — Configured for Python and macOS (`.DS_Store`, `__pycache__`, `.env`, etc.).
+Accepted on `/output/{format_name}` only. Controls what the output plugin fetches and how it renders.
 
-6. **Environment variables** — MS TTS subscription keys and defaults are stored in `.env`,
-   all prefixed with `MSTTS_` (e.g. `MSTTS_SUBSCRIPTION_KEY`, `MSTTS_REGION`,
-   `MSTTS_DEFAULT_VOICE`, `MSTTS_DEFAULT_LANGUAGE`).
+| Mode | Fetch behavior | Render behavior |
+|---|---|---|
+| `full` (default) | Single article at `articleOffset` via `fetch()` | Full article: title + body (TTS audio if available) |
+| `summary` | All articles via `list_articles()` | Header only: title per article, no body |
+| `nextArticle` | Single article at `articleOffset + 1` via `fetch()` | Header only: announces next article title |
 
-7. **Speech streaming and caching:**
-   - 7.1. Generated speech is cached to disk. Folder structure: `cache/<plugin>/<language>/<voice>/`.
-   - 7.2. Filename: 128-char SHA-256 hash of text + `-<rate>-<pitch>.wav`.
-   - 7.3. If a cached file exists, it is streamed directly instead of regenerating.
-   - 7.4. All caching and streaming logic lives inside the plugins, not core, so plugins are
-     reusable across projects.
+## Environment
 
-8. **Source plugins** — Fetch data from URLs (e.g. articles from a WordPress tag or Hugo tag).
-
-9. **Output plugins** — Format non-audio output, such as Twilio XML or Signalwire LAML for
-   phone system article navigation.
-
-10. **API documentation** — Automatic via FastAPI's built-in OpenAPI support.
+All env vars prefixed `MSTTS_`: `SUBSCRIPTION_KEY`, `REGION`, `DEFAULT_VOICE`, `DEFAULT_LANGUAGE`. Stored in `.env`.

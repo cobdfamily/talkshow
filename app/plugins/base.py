@@ -51,7 +51,7 @@ class TTSPlugin(ABC):
     ) -> Path:
         """Return the full cache file path for a synthesis request.
 
-        Filename: 128-char SHA-256 hex digest of the text + -<rate>-<pitch>.wav
+        Filename: 128-char SHA-2 (SHA-512) hex digest of the text + -<rate>-<pitch>.wav
         """
         text_hash = hashlib.sha512(text.encode("utf-8")).hexdigest()[:128]
         safe_rate = rate.replace("%", "pct").replace("+", "plus").replace("-", "minus")
@@ -116,6 +116,7 @@ class OutputPlugin(ABC):
         tts_base_url: str = "",
         voice: str | None = None,
         language: str | None = None,
+        mode: str = "full",
     ) -> str:
         """Render the given articles into the output format.
 
@@ -124,6 +125,8 @@ class OutputPlugin(ABC):
             tts_base_url: Base URL for TTS audio endpoints.
             voice: Voice to use for TTS references.
             language: Language to use for TTS references.
+            mode: "full" (include body), "summary" (header only),
+                  or "nextArticle" (header of next article).
 
         Returns:
             Formatted string (e.g. XML).

@@ -16,31 +16,7 @@ class SourceBody(BaseModel):
     articleOffset: int | None = Field(None, description="Article index to fetch (0-based)")
 
 
-@router.post(
-    "/source",
-    summary="Fetch an article from a datasource",
-    description=(
-        "Fetch an article using a datasource plugin. Provide the plugin name, "
-        "source URL, and article offset. Parameters can be passed via query "
-        "string, JSON body, or both (query takes precedence)."
-    ),
-    responses={
-        200: {"description": "Article data"},
-        400: {"description": "Missing required parameters"},
-        404: {"description": "Source plugin not found"},
-    },
-)
-async def fetch_article(
-    name: str | None = Query(None, description="Source plugin name"),
-    url: str | None = Query(None, description="Source URL"),
-    articleOffset: int | None = Query(None, description="Article index (0-based)"),
-    body: SourceBody | None = None,
-):
-    source_name = name or (body.name if body else None)
-    source_url = url or (body.url if body else None)
-    offset = articleOffset if articleOffset is not None else (body.articleOffset if body else None)
-    offset = offset or 0
-
+async def _do_fetch(source_name: str | None, source_url: str | None, offset: int):
     if not source_name:
         raise HTTPException(status_code=400, detail="'name' is required")
     if not source_url:
@@ -62,24 +38,7 @@ async def fetch_article(
         raise HTTPException(status_code=502, detail=f"Source fetch failed: {e}")
 
 
-@router.post(
-    "/source/list",
-    summary="List articles from a datasource",
-    description="List all available articles from a datasource plugin.",
-    responses={
-        200: {"description": "List of articles"},
-        400: {"description": "Missing required parameters"},
-        404: {"description": "Source plugin not found"},
-    },
-)
-async def list_articles(
-    name: str | None = Query(None, description="Source plugin name"),
-    url: str | None = Query(None, description="Source URL"),
-    body: SourceBody | None = None,
-):
-    source_name = name or (body.name if body else None)
-    source_url = url or (body.url if body else None)
-
+async def _do_list(source_name: str | None, source_url: str | None):
     if not source_name:
         raise HTTPException(status_code=400, detail="'name' is required")
     if not source_url:
@@ -97,3 +56,82 @@ async def list_articles(
         return await plugin.list_articles(source_url)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Source fetch failed: {e}")
+
+
+_fetch_common = dict(
+    summary="Fetch an article from a datasource",
+    responses={
+        200: {"description": "Article data"},
+        400: {"description": "Missing required parameters"},
+        404: {"description": "Source plugin not found"},
+    },
+)
+
+_list_common = dict(
+    summary="List articles from a datasource",
+    responses={
+        200: {"description": "List of articles"},
+        400: {"description": "Missing required parameters"},
+        404: {"description": "Source plugin not found"},
+    },
+)
+
+
+@router.get(
+    "/source",
+    description="Fetch an article using query parameters only.",
+    **_fetch_common,
+)
+async def fetch_article_get(
+    name: str | None = Query(None, description="Source plugin name"),
+    url: str | None = Query(None, description="Source URL"),
+    articleOffset: int | None = Query(None, description="Article index (0-based)"),
+):
+    return await _do_fetch(name, url, articleOffset or 0)
+
+
+@router.post(
+    "/source",
+    description=(
+        "Fetch an article using a datasource plugin. Parameters can be passed via "
+        "query string, JSON body, or both (query takes precedence)."
+    ),
+    **_fetch_common,
+)
+async def fetch_article_post(
+    name: str | None = Query(None, description="Source plugin name"),
+    url: str | None = Query(None, description="Source URL"),
+    articleOffset: int | None = Query(None, description="Article index (0-based)"),
+    body: SourceBody | None = None,
+):
+    source_name = name or (body.name if body else None)
+    source_url = url or (body.url if body else None)
+    offset = articleOffset if articleOffset is not None else (body.articleOffset if body else None)
+    return await _do_fetch(source_name, source_url, offset or 0)
+
+
+@router.get(
+    "/source/list",
+    description="List available articles using query parameters only.",
+    **_list_common,
+)
+async def list_articles_get(
+    name: str | None = Query(None, description="Source plugin name"),
+    url: str | None = Query(None, description="Source URL"),
+):
+    return await _do_list(name, url)
+
+
+@router.post(
+    "/source/list",
+    description="List available articles from a datasource plugin.",
+    **_list_common,
+)
+async def list_articles_post(
+    name: str | None = Query(None, description="Source plugin name"),
+    url: str | None = Query(None, description="Source URL"),
+    body: SourceBody | None = None,
+):
+    source_name = name or (body.name if body else None)
+    source_url = url or (body.url if body else None)
+    return await _do_list(source_name, source_url)

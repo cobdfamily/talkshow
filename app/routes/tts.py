@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..plugins import loader
@@ -20,22 +20,88 @@ class TTSBody(BaseModel):
     engine: str | None = Field(None, description="TTS engine plugin name (default: azure)")
 
 
-@router.post(
-    "/tts",
+async def _do_synthesize(
+    text: str | None,
+    voice: str | None,
+    language: str | None,
+    rate: str | None,
+    pitch: str | None,
+    engine_name: str,
+) -> Response:
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+
+    plugin = loader.get_tts(engine_name)
+    if not plugin:
+        available = list(loader.list_tts().keys())
+        raise HTTPException(
+            status_code=404,
+            detail=f"TTS engine '{engine_name}' not found. Available: {available}",
+        )
+
+    stream = plugin.synthesize(
+        text, voice=voice, language=language, rate=rate, pitch=pitch
+    )
+
+    # Collect all audio chunks. The plugin already materializes the full audio
+    # (either from synthesis or cache read) before yielding, so this doesn't
+    # add memory overhead. A full Response with Content-Length is required for
+    # Safari and other browsers to play the audio.
+    chunks = []
+    try:
+        async for chunk in stream:
+            chunks.append(chunk)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {e}")
+
+    if not chunks:
+        raise HTTPException(status_code=500, detail="TTS engine returned no audio")
+
+    audio_data = b"".join(chunks)
+
+    return Response(
+        content=audio_data,
+        media_type="audio/wav",
+        headers={"Content-Length": str(len(audio_data))},
+    )
+
+
+_common = dict(
     summary="Synthesize text to speech",
-    description=(
-        "Generate speech audio from text. Text can be provided via the `text` query "
-        "parameter, the JSON body, or both (combined with a space, query first). "
-        "Returns a WAV audio stream."
-    ),
-    response_class=StreamingResponse,
     responses={
-        200: {"content": {"audio/wav": {}}, "description": "WAV audio stream"},
+        200: {"content": {"audio/wav": {}}, "description": "WAV audio"},
         400: {"description": "No text provided"},
         404: {"description": "TTS engine not found"},
     },
 )
-async def synthesize(
+
+
+@router.get(
+    "/speak",
+    description="Generate speech audio from text via query parameters. Returns WAV audio.",
+    **_common,
+)
+async def synthesize_get(
+    text: str | None = Query(None, description="Text to synthesize"),
+    voice: str | None = Query(None, description="Voice name"),
+    language: str | None = Query(None, description="Language code"),
+    rate: str | None = Query(None, description="Speech rate"),
+    pitch: str | None = Query(None, description="Speech pitch"),
+    engine: str | None = Query(None, description="TTS engine plugin name"),
+):
+    return await _do_synthesize(text, voice, language, rate, pitch, engine or "azure")
+
+
+@router.post(
+    "/speak",
+    description=(
+        "Generate speech audio from text. Text can be provided via the `text` query "
+        "parameter, the JSON body, or both (combined with a space, query first). "
+        "Returns WAV audio."
+    ),
+    **_common,
+)
+async def synthesize_post(
     text: str | None = Query(None, description="Text to synthesize"),
     voice: str | None = Query(None, description="Voice name"),
     language: str | None = Query(None, description="Language code"),
@@ -52,9 +118,6 @@ async def synthesize(
         parts.append(body.text)
     combined_text = " ".join(parts)
 
-    if not combined_text:
-        raise HTTPException(status_code=400, detail="No text provided")
-
     # Merge params — query takes precedence, body fills gaps
     voice = voice or (body.voice if body else None)
     language = language or (body.language if body else None)
@@ -62,31 +125,4 @@ async def synthesize(
     pitch = pitch or (body.pitch if body else None)
     engine_name = engine or (body.engine if body else None) or "azure"
 
-    plugin = loader.get_tts(engine_name)
-    if not plugin:
-        available = list(loader.list_tts().keys())
-        raise HTTPException(
-            status_code=404,
-            detail=f"TTS engine '{engine_name}' not found. Available: {available}",
-        )
-
-    stream = plugin.synthesize(
-        combined_text, voice=voice, language=language, rate=rate, pitch=pitch
-    )
-
-    # Pull the first chunk before committing to a StreamingResponse so that
-    # synthesis errors (bad credentials, network issues) return a proper HTTP
-    # error instead of a broken stream.
-    try:
-        first_chunk = await stream.__anext__()
-    except StopAsyncIteration:
-        raise HTTPException(status_code=500, detail="TTS engine returned no audio")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"TTS synthesis failed: {e}")
-
-    async def _stream():
-        yield first_chunk
-        async for chunk in stream:
-            yield chunk
-
-    return StreamingResponse(_stream(), media_type="audio/wav")
+    return await _do_synthesize(combined_text, voice, language, rate, pitch, engine_name)
