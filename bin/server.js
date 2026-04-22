@@ -6,6 +6,12 @@ const articles = require( '../src/articles' );
 
 const app = express();
 
+app.get( '/', function( req, res ) {
+
+res.redirect( 302, '/categories' );
+
+} );
+
 app.get( '/categories', async function( req, res ) {
 
 try
@@ -34,25 +40,25 @@ res.status(503).json( { error: { message: error.message } } );
 
 } );
 
-app.get( '/categories/:category/offset', async function( req, res ) {
+app.get( '/categories/:category/offset', function( req, res ) {
 
-try
-{
-res.json( await articles.getArticleForCategoryAtIndex( req.params.category, 0 ) );
-}
-catch( error )
-{
-console.error( error );
-res.status(503).json( { error: { message: error.message } } );
-}
+res.redirect( 301, `/categories/${encodeURIComponent( req.params.category )}` );
 
 } );
 
 app.get( '/categories/:category/offset/:offset', async function( req, res ) {
 
+const offset = parseInt( req.params.offset, 10 );
+
+if( !Number.isInteger( offset ) || offset < 0 )
+{
+res.status(400).json( { error: { message: "Invalid offset" } } );
+return;
+}
+
 try
 {
-res.json( await articles.getArticleForCategoryAtIndex( req.params.category, req.params.offset ) );
+res.json( await articles.getArticleForCategoryAtIndex( req.params.category, offset ) );
 }
 catch( error )
 {
@@ -62,4 +68,4 @@ res.status(503).json( { error: { message: error.message } } );
 
 } );
 
-app.listen( 1992 );
+app.listen( process.env.PORT || 1992 );

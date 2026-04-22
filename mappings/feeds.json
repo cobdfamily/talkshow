@@ -19,7 +19,7 @@
 		"name": "National News",
 		"url": "https://bowenislandundercurrent.com/rss/national-news"
 	},
-	"World News": {
+	"world_news": {
 		"name": "World News",
 		"url": "https://bowenislandundercurrent.com/rss/world-news"
 	},
