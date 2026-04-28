@@ -13,10 +13,12 @@ __pycache__
 *.pyo
 *.pyd
 .DS_Store
-README.md
 PROJECT.md
 DEPLOYMENT.md
 CHANGELOG.md
 LICENSE
 tests
 cache
+# README.md is intentionally NOT ignored: pyproject.toml's
+# `readme = "README.md"` field is read by hatchling during the
+# in-container `uv sync`, so the file must reach the build context.
