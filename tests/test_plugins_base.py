@@ -1,12 +1,10 @@
 """Tests for plugin base classes — hashing, cache paths, interfaces."""
 
 import hashlib
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
-from app.plugins.base import SourcePlugin, TTSPlugin
+from talkshow.plugins.base import SourcePlugin, TTSPlugin
 
 
 # --- Concrete stubs for testing the ABCs ---

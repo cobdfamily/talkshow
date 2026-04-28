@@ -58,7 +58,7 @@ def load_all() -> None:
         ("sources", SourcePlugin, register_source),
     ]:
         pkg_path = str(plugins_dir / subdir)
-        pkg_name = f"app.plugins.{subdir}"
+        pkg_name = f"talkshow.plugins.{subdir}"
         modules = _scan_package(pkg_path, pkg_name)
 
         for module in modules:

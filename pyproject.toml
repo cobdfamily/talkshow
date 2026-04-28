@@ -1,0 +1,69 @@
+[project]
+name = "talkshow"
+version = "0.4.0"
+description = "TTS microservice with a plugin architecture; one /speak endpoint covers SSML, plain text, and source-plugin fetches"
+readme = "README.md"
+license = "AGPL-3.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.34",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.7",
+  "python-dotenv>=1.0",
+  "azure-cognitiveservices-speech>=1.40",
+  "httpx>=0.28",
+]
+
+[project.scripts]
+talkshow = "talkshow.main:run"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "pytest-cov>=5",
+  "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/talkshow"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["src/talkshow"]
+omit = [
+  # Entry point is exercised via the FastAPI TestClient; coverage
+  # gets confused by the lifespan + uvicorn.run wrapper.
+  "src/talkshow/main.py",
+  # The bundled plugins make real network calls (Azure Speech SDK,
+  # WordPress REST). Unit tests use stub plugins; the real ones are
+  # exercised by integration / smoke tests against actual services
+  # and should be covered there, not here.
+  "src/talkshow/plugins/tts/azure_tts.py",
+  "src/talkshow/plugins/sources/wordpress.py",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]

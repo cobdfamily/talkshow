@@ -1,14 +1,17 @@
 """Talkshow — TTS microservice with a plugin architecture."""
 
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
 load_dotenv()
 
-from app.plugins import loader
-from app.routes import plugins, tts
+from talkshow.plugins import loader  # noqa: E402  -- after load_dotenv
+from talkshow.routes import plugins, tts  # noqa: E402
 
 
 @asynccontextmanager
@@ -25,7 +28,7 @@ app = FastAPI(
         "fetched via a source plugin (eg. WordPress). Plugin "
         "architecture for TTS engines and data sources."
     ),
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -36,3 +39,11 @@ app.include_router(plugins.router)
 @app.get("/", tags=["Health"])
 async def root():
     return {"service": "talkshow", "status": "ok", "docs": "/docs"}
+
+
+def run() -> None:
+    """Console-script entrypoint (`uv run talkshow`)."""
+    import os
+    host = os.getenv("TALKSHOW_HOST", "0.0.0.0")
+    port = int(os.getenv("TALKSHOW_PORT", "8000"))
+    uvicorn.run("talkshow.main:app", host=host, port=port, reload=False)

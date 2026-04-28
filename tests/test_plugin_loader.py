@@ -1,7 +1,7 @@
 """Tests for plugin discovery and registration."""
 
-from app.plugins import loader
-from app.plugins.base import SourcePlugin, TTSPlugin
+from talkshow.plugins import loader
+from talkshow.plugins.base import SourcePlugin, TTSPlugin
 
 
 class TestPluginLoader:

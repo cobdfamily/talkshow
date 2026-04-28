@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.plugins import loader
-from app.plugins.base import SourcePlugin, TTSPlugin
+from talkshow.plugins import loader
+from talkshow.plugins.base import SourcePlugin, TTSPlugin
 
 
 # --- Stub plugins for HTTP tests ---
@@ -84,7 +84,7 @@ def setup_fake_plugins(fake_tts, fake_source):
 
 @pytest.fixture
 def client():
-    from main import app
+    from talkshow.main import app
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -187,12 +187,12 @@ class TestSpeakURL:
         assert fake_source.last_call["summary"] is True
         assert fake_tts.last_call["text"].startswith("Summary of article")
 
-    def test_url_unknown_source_returns_404(self, client):
+    def test_url_unknown_plugin_returns_404(self, client):
         r = client.get(
             "/speak",
             params={
                 "url": "https://example.com",
-                "source": "nope",
+                "plugin": "nope",
                 "engine": "fake",
             },
         )

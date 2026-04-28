@@ -36,3 +36,8 @@ playwright/auth/
 .playwright/
 *_session.json
 storage-state.json
+
+# uv / coverage runtime artifacts
+.coverage
+coverage.xml
+htmlcov/

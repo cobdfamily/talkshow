@@ -1,40 +1,47 @@
-# Talkshow container image. Single-stage; the deps fit and pip's
-# wheel cache stays inside the layer for fast rebuilds.
+# Two-stage build: uv builds the venv from the lockfile, runtime
+# image is python:3.12-slim with the venv copied in. uvicorn runs
+# as PID 1 so SIGTERM reaches Python promptly.
 
-FROM python:3.12-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 
-# Slim ships without build tools; the azure-cognitiveservices-speech
-# wheel is prebuilt for linux/amd64 so no compile step is needed at
-# install time. Add gcc here only if you flip on a multi-arch build
-# that needs to compile something.
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
 
 WORKDIR /app
 
-# Install deps first so the layer is reusable across source-only
-# rebuilds.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install deps without touching project source first so this layer
+# caches across source-only rebuilds.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
 
-# App source. .dockerignore keeps secrets, caches, and venvs out
-# of the build context.
-COPY app /app/app
-COPY main.py /app/main.py
+# Now bring the source and install the project itself.
+COPY src ./src
+RUN uv sync --frozen --no-dev
 
-# Run as a non-root user. The cache dir is created with permissions
-# the runtime user can write to.
+
+FROM python:3.12-slim AS runtime
+
+# Run as a non-root user.
 RUN groupadd --system --gid 1000 talkshow \
- && useradd --system --uid 1000 --gid 1000 --home /app --shell /sbin/nologin talkshow \
- && mkdir -p /app/cache \
- && chown -R talkshow:talkshow /app
+ && useradd --system --uid 1000 --gid 1000 \
+       --home /app --shell /sbin/nologin talkshow
+
+WORKDIR /app
+
+# Bring the venv + source over from the build stage.
+COPY --from=builder --chown=talkshow:talkshow /app /app
+
+# The cache dir is created with permissions the runtime user can
+# write to. Operators should bind-mount this so the audio cache
+# survives container rebuilds.
+RUN mkdir -p /app/cache && chown -R talkshow:talkshow /app/cache
+
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 USER talkshow
-
 EXPOSE 8000
 
-# uvicorn directly so signals (SIGTERM) reach Python promptly.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "talkshow.main:app", "--host", "0.0.0.0", "--port", "8000"]
