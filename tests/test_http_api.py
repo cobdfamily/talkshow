@@ -59,7 +59,10 @@ class FakeOutput(OutputPlugin):
     description = "Fake output for testing"
     content_type = "text/plain"
 
-    async def render(self, articles, *, tts_base_url="", voice=None, language=None):
+    async def render(
+        self, articles, *,
+        tts_base_url="", voice=None, language=None, mode="full",
+    ):
         titles = ", ".join(a["title"] for a in articles)
         return f"Articles: {titles}"
 
