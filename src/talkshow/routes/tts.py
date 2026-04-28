@@ -36,7 +36,7 @@ class SpeakBody(BaseModel):
     rate: str | None = Field(None, description="Speech rate (e.g. +10%)")
     pitch: str | None = Field(None, description="Speech pitch (e.g. -5%)")
     engine: str | None = Field(None, description="TTS engine plugin name")
-    plugin: str | None = Field(None, description="Source plugin name (default: wordpress)")
+    source: str | None = Field(None, description="Source plugin name (default: wordpress)")
 
 
 async def _resolve_text(
@@ -174,7 +174,7 @@ async def synthesize_get(
     rate: str | None = Query(None, description="Speech rate"),
     pitch: str | None = Query(None, description="Speech pitch"),
     engine: str | None = Query(None, description="TTS engine plugin name"),
-    plugin: str | None = Query(None, description="Source plugin name"),
+    source: str | None = Query(None, description="Source plugin name"),
 ):
     return await _do_synthesize(
         ssml=ssml,
@@ -187,7 +187,7 @@ async def synthesize_get(
         rate=rate,
         pitch=pitch,
         engine_name=engine or "azure",
-        source_name=plugin or "wordpress",
+        source_name=source or "wordpress",
     )
 
 
@@ -210,7 +210,7 @@ async def synthesize_post(
     rate: str | None = Query(None, description="Speech rate"),
     pitch: str | None = Query(None, description="Speech pitch"),
     engine: str | None = Query(None, description="TTS engine plugin name"),
-    plugin: str | None = Query(None, description="Source plugin name"),
+    source: str | None = Query(None, description="Source plugin name"),
     body: SpeakBody | None = None,
 ):
     final_ssml = ssml or (body.ssml if body else None)
@@ -223,7 +223,7 @@ async def synthesize_post(
     final_rate = rate or (body.rate if body else None)
     final_pitch = pitch or (body.pitch if body else None)
     engine_name = engine or (body.engine if body else None) or "azure"
-    source_name = plugin or (body.plugin if body else None) or "wordpress"
+    source_name = source or (body.source if body else None) or "wordpress"
 
     return await _do_synthesize(
         ssml=final_ssml,

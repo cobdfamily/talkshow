@@ -24,7 +24,7 @@ Three mutually substitutable input forms; precedence is `ssml > text > url`:
 | `rate` | Speech rate (e.g. `+10%`). |
 | `pitch` | Speech pitch (e.g. `-5%`). |
 | `engine` | TTS plugin name. Default `azure`. |
-| `plugin` | Source plugin name. Default `wordpress`. |
+| `source` | Source plugin name. Default `wordpress`. |
 
 POST takes the same args via JSON body OR query string; query wins on conflict.
 

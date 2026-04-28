@@ -28,7 +28,7 @@ app = FastAPI(
         "fetched via a source plugin (eg. WordPress). Plugin "
         "architecture for TTS engines and data sources."
     ),
-    version="0.4.0",
+    version="0.4.1",
     lifespan=lifespan,
 )
 

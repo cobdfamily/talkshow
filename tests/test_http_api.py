@@ -187,12 +187,12 @@ class TestSpeakURL:
         assert fake_source.last_call["summary"] is True
         assert fake_tts.last_call["text"].startswith("Summary of article")
 
-    def test_url_unknown_plugin_returns_404(self, client):
+    def test_url_unknown_source_returns_404(self, client):
         r = client.get(
             "/speak",
             params={
                 "url": "https://example.com",
-                "plugin": "nope",
+                "source": "nope",
                 "engine": "fake",
             },
         )

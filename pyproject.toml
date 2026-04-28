@@ -1,6 +1,6 @@
 [project]
 name = "talkshow"
-version = "0.4.0"
+version = "0.4.1"
 description = "TTS microservice with a plugin architecture; one /speak endpoint covers SSML, plain text, and source-plugin fetches"
 readme = "README.md"
 license = "AGPL-3.0"

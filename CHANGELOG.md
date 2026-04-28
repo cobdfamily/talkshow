@@ -5,14 +5,21 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-04-27
+## [0.4.1] - 2026-04-27
 
 ### Changed (breaking)
-- `/speak` source-plugin selector renamed `source` → `plugin`.
-  POST body field renamed in lockstep. Anyone calling
-  `/speak?source=wordpress` should switch to
-  `/speak?plugin=wordpress`. Default value (`wordpress`)
-  unchanged.
+- `/speak` source-plugin selector renamed back from
+  `plugin` to `source`. The 0.4.0 rename was a mistake.
+  Switch `/speak?plugin=wordpress` calls to
+  `/speak?source=wordpress`. Default value unchanged.
+
+## [0.4.0] - 2026-04-27
+
+### Note
+- This release temporarily renamed the source-plugin
+  selector to `plugin`. 0.4.1 reverts that to `source`.
+  Skip 0.4.0 for the layout work below; the rename was
+  not the right call.
 
 ### Changed — Layout
 - Project converted to a `src/talkshow/` layout managed by uv.
@@ -85,7 +92,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/cobdfamily/talkshow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cobdfamily/talkshow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cobdfamily/talkshow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cobdfamily/talkshow/compare/v0.1.1...v0.2.0
