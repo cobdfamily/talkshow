@@ -39,19 +39,17 @@ class FakeSource(SourcePlugin):
     name = "fakesrc"
     description = "Fake source for testing"
 
-    async def fetch(self, url, *, article_offset=0):
+    async def fetch(self, url, *, offset=0, summary=False):
+        title = f"Article {offset}"
+        body = f"Content from {url} at offset {offset}"
+        excerpt = f"Summary of article {offset}"
         return {
-            "title": f"Article {article_offset}",
-            "text": f"Content from {url} at offset {article_offset}",
+            "title": title,
+            "text": excerpt if summary else body,
             "url": url,
-            "index": article_offset,
+            "summary": excerpt,
+            "offset": offset,
         }
-
-    async def list_articles(self, url):
-        return [
-            {"title": f"Article {i}", "url": f"{url}/{i}", "index": i}
-            for i in range(3)
-        ]
 
 
 class FakeOutput(OutputPlugin):
@@ -60,11 +58,10 @@ class FakeOutput(OutputPlugin):
     content_type = "text/plain"
 
     async def render(
-        self, articles, *,
-        tts_base_url="", voice=None, language=None, mode="full",
+        self, article, *,
+        tts_base_url="", voice=None, language=None,
     ):
-        titles = ", ".join(a["title"] for a in articles)
-        return f"Articles: {titles}"
+        return f"Article: {article['title']} :: {article['text']}"
 
 
 @pytest.fixture(autouse=True)
@@ -188,12 +185,12 @@ class TestSourceGet:
         resp = client.get("/source", params={
             "name": "fakesrc",
             "url": "https://example.com",
-            "articleOffset": 1,
+            "offset": 1,
         })
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "Article 1"
-        assert data["index"] == 1
+        assert data["offset"] == 1
 
     def test_get_source_default_offset_zero(self, client):
         resp = client.get("/source", params={
@@ -201,7 +198,18 @@ class TestSourceGet:
             "url": "https://example.com",
         })
         assert resp.status_code == 200
-        assert resp.json()["index"] == 0
+        assert resp.json()["offset"] == 0
+
+    def test_get_source_summary_true_returns_excerpt(self, client):
+        resp = client.get("/source", params={
+            "name": "fakesrc",
+            "url": "https://example.com",
+            "summary": "true",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        # summary=True puts the excerpt into `text`
+        assert data["text"].startswith("Summary of article")
 
     def test_get_source_missing_name_returns_400(self, client):
         resp = client.get("/source", params={"url": "https://example.com"})
@@ -223,19 +231,28 @@ class TestSourcePost:
         resp = client.post("/source", params={
             "name": "fakesrc",
             "url": "https://example.com",
-            "articleOffset": 2,
+            "offset": 2,
         })
         assert resp.status_code == 200
-        assert resp.json()["index"] == 2
+        assert resp.json()["offset"] == 2
 
     def test_post_source_body_params(self, client):
         resp = client.post("/source", json={
             "name": "fakesrc",
             "url": "https://example.com",
-            "articleOffset": 1,
+            "offset": 1,
         })
         assert resp.status_code == 200
-        assert resp.json()["index"] == 1
+        assert resp.json()["offset"] == 1
+
+    def test_post_source_summary_in_body(self, client):
+        resp = client.post("/source", json={
+            "name": "fakesrc",
+            "url": "https://example.com",
+            "summary": True,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["text"].startswith("Summary of article")
 
     def test_post_source_query_overrides_body(self, client):
         resp = client.post(
@@ -247,31 +264,6 @@ class TestSourcePost:
         assert "query.com" in resp.json()["text"]
 
 
-class TestSourceListGet:
-    def test_get_source_list(self, client):
-        resp = client.get("/source/list", params={
-            "name": "fakesrc",
-            "url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        articles = resp.json()
-        assert len(articles) == 3
-
-    def test_get_source_list_missing_params(self, client):
-        resp = client.get("/source/list")
-        assert resp.status_code == 400
-
-
-class TestSourceListPost:
-    def test_post_source_list_body(self, client):
-        resp = client.post("/source/list", json={
-            "name": "fakesrc",
-            "url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        assert len(resp.json()) == 3
-
-
 # ========== OUTPUT ROUTES ==========
 
 class TestOutputGet:
@@ -281,7 +273,7 @@ class TestOutputGet:
             "source_url": "https://example.com",
         })
         assert resp.status_code == 200
-        assert "Articles:" in resp.text
+        assert "Article: Article 0" in resp.text
 
     def test_get_output_missing_source_returns_400(self, client):
         resp = client.get("/output/fakeout")
@@ -302,7 +294,7 @@ class TestOutputPost:
             "source_url": "https://example.com",
         })
         assert resp.status_code == 200
-        assert "Articles:" in resp.text
+        assert "Article: Article 0" in resp.text
 
     def test_post_output_body(self, client):
         resp = client.post("/output/fakeout", json={
@@ -310,7 +302,7 @@ class TestOutputPost:
             "source_url": "https://example.com",
         })
         assert resp.status_code == 200
-        assert "Articles:" in resp.text
+        assert "Article: Article 0" in resp.text
 
     def test_post_output_query_overrides_body(self, client):
         resp = client.post(

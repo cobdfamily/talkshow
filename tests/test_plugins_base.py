@@ -23,11 +23,8 @@ class StubSource(SourcePlugin):
     name = "stub"
     description = "test stub"
 
-    async def fetch(self, url, *, article_offset=0):
+    async def fetch(self, url, *, offset=0, summary=False):
         return {"title": "t", "text": "t", "url": url}
-
-    async def list_articles(self, url):
-        return []
 
 
 class StubOutput(OutputPlugin):
@@ -35,7 +32,7 @@ class StubOutput(OutputPlugin):
     description = "test stub"
     content_type = "text/plain"
 
-    async def render(self, articles, *, tts_base_url="", voice=None, language=None):
+    async def render(self, article, *, tts_base_url="", voice=None, language=None):
         return "ok"
 
 

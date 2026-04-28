@@ -11,12 +11,26 @@ router = APIRouter(tags=["Sources"])
 
 
 class SourceBody(BaseModel):
-    name: str | None = Field(None, description="Source plugin name (e.g. wordpress)")
-    url: str | None = Field(None, description="Source URL (e.g. https://example.com)")
-    articleOffset: int | None = Field(None, description="Article index to fetch (0-based)")
+    name: str | None = Field(
+        None, description="Source plugin name (e.g. wordpress)",
+    )
+    url: str | None = Field(
+        None, description="Source URL — single article or index page",
+    )
+    offset: int | None = Field(
+        None, description="When url is an index, the 0-based offset",
+    )
+    summary: bool | None = Field(
+        None, description="True for summary, False for full body",
+    )
 
 
-async def _do_fetch(source_name: str | None, source_url: str | None, offset: int):
+async def _do_fetch(
+    source_name: str | None,
+    source_url: str | None,
+    offset: int,
+    summary: bool,
+):
     if not source_name:
         raise HTTPException(status_code=400, detail="'name' is required")
     if not source_url:
@@ -31,34 +45,14 @@ async def _do_fetch(source_name: str | None, source_url: str | None, offset: int
         )
 
     try:
-        return await plugin.fetch(source_url, article_offset=offset)
+        return await plugin.fetch(source_url, offset=offset, summary=summary)
     except IndexError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Source fetch failed: {e}")
 
 
-async def _do_list(source_name: str | None, source_url: str | None):
-    if not source_name:
-        raise HTTPException(status_code=400, detail="'name' is required")
-    if not source_url:
-        raise HTTPException(status_code=400, detail="'url' is required")
-
-    plugin = loader.get_source(source_name)
-    if not plugin:
-        available = list(loader.list_sources().keys())
-        raise HTTPException(
-            status_code=404,
-            detail=f"Source '{source_name}' not found. Available: {available}",
-        )
-
-    try:
-        return await plugin.list_articles(source_url)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Source fetch failed: {e}")
-
-
-_fetch_common = dict(
+_common = dict(
     summary="Fetch an article from a datasource",
     responses={
         200: {"description": "Article data"},
@@ -67,71 +61,45 @@ _fetch_common = dict(
     },
 )
 
-_list_common = dict(
-    summary="List articles from a datasource",
-    responses={
-        200: {"description": "List of articles"},
-        400: {"description": "Missing required parameters"},
-        404: {"description": "Source plugin not found"},
-    },
-)
-
 
 @router.get(
     "/source",
-    description="Fetch an article using query parameters only.",
-    **_fetch_common,
+    description=(
+        "Fetch an article using query parameters only. The plugin "
+        "decides whether the URL is an index or a single article. "
+        "Pass `offset` to pick from an index, `summary=true` to "
+        "return a summary instead of the full body."
+    ),
+    **_common,
 )
 async def fetch_article_get(
     name: str | None = Query(None, description="Source plugin name"),
     url: str | None = Query(None, description="Source URL"),
-    articleOffset: int | None = Query(None, description="Article index (0-based)"),
+    offset: int | None = Query(None, description="Article index (0-based)"),
+    summary: bool | None = Query(None, description="Summary vs full body"),
 ):
-    return await _do_fetch(name, url, articleOffset or 0)
+    return await _do_fetch(name, url, offset or 0, bool(summary))
 
 
 @router.post(
     "/source",
     description=(
-        "Fetch an article using a datasource plugin. Parameters can be passed via "
-        "query string, JSON body, or both (query takes precedence)."
+        "Fetch an article. Parameters can be passed via query "
+        "string, JSON body, or both (query takes precedence)."
     ),
-    **_fetch_common,
+    **_common,
 )
 async def fetch_article_post(
     name: str | None = Query(None, description="Source plugin name"),
     url: str | None = Query(None, description="Source URL"),
-    articleOffset: int | None = Query(None, description="Article index (0-based)"),
+    offset: int | None = Query(None, description="Article index (0-based)"),
+    summary: bool | None = Query(None, description="Summary vs full body"),
     body: SourceBody | None = None,
 ):
     source_name = name or (body.name if body else None)
     source_url = url or (body.url if body else None)
-    offset = articleOffset if articleOffset is not None else (body.articleOffset if body else None)
-    return await _do_fetch(source_name, source_url, offset or 0)
-
-
-@router.get(
-    "/source/list",
-    description="List available articles using query parameters only.",
-    **_list_common,
-)
-async def list_articles_get(
-    name: str | None = Query(None, description="Source plugin name"),
-    url: str | None = Query(None, description="Source URL"),
-):
-    return await _do_list(name, url)
-
-
-@router.post(
-    "/source/list",
-    description="List available articles from a datasource plugin.",
-    **_list_common,
-)
-async def list_articles_post(
-    name: str | None = Query(None, description="Source plugin name"),
-    url: str | None = Query(None, description="Source URL"),
-    body: SourceBody | None = None,
-):
-    source_name = name or (body.name if body else None)
-    source_url = url or (body.url if body else None)
-    return await _do_list(source_name, source_url)
+    final_offset = offset if offset is not None else (body.offset if body else None)
+    final_summary = summary if summary is not None else (body.summary if body else None)
+    return await _do_fetch(
+        source_name, source_url, final_offset or 0, bool(final_summary),
+    )

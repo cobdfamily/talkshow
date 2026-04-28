@@ -24,7 +24,7 @@ app = FastAPI(
         "data sources, and output formatters. Supports Microsoft Azure TTS, "
         "WordPress data sources, and Twilio XML / Signalwire LAML output."
     ),
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 

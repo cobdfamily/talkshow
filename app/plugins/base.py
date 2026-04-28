@@ -63,7 +63,26 @@ class TTSPlugin(ABC):
 class SourcePlugin(ABC):
     """Base class for data source plugins.
 
-    Source plugins fetch content from URLs (e.g. WordPress tags, Hugo tags).
+    Source plugins fetch one article from a URL. The contract is
+    deliberately small — three knobs and an article dict back:
+
+      url      The URL to fetch from. May point at a single article
+               or at an index page that lists multiple.
+      offset   When the URL is an index, the zero-based index of
+               which article to fetch.
+      summary  ``True`` returns the article's summary (title + a
+               short description). ``False`` returns the full body.
+
+    The plugin decides for itself whether ``url`` is an index or a
+    single-article URL — call sites don't need to know.
+
+    Implementations return a dict with at minimum:
+
+      title, text, url
+
+    Plus an optional ``summary`` key that callers may render as the
+    short form. When ``summary`` is True, the ``text`` field SHOULD
+    contain the summary so dumb consumers still work.
     """
 
     name: str  # e.g. "wordpress"
@@ -74,26 +93,9 @@ class SourcePlugin(ABC):
         self,
         url: str,
         *,
-        article_offset: int = 0,
+        offset: int = 0,
+        summary: bool = False,
     ) -> dict:
-        """Fetch content from the given URL.
-
-        Returns a dict with at least:
-            - "title": article title
-            - "text": article body text
-            - "url": canonical URL
-        """
-        ...
-
-    @abstractmethod
-    async def list_articles(self, url: str) -> list[dict]:
-        """List available articles from the source URL.
-
-        Returns a list of dicts with at least:
-            - "title": article title
-            - "url": article URL
-            - "index": position in the list
-        """
         ...
 
 
@@ -111,22 +113,24 @@ class OutputPlugin(ABC):
     @abstractmethod
     async def render(
         self,
-        articles: list[dict],
+        article: dict,
         *,
         tts_base_url: str = "",
         voice: str | None = None,
         language: str | None = None,
-        mode: str = "full",
     ) -> str:
-        """Render the given articles into the output format.
+        """Render a single article into the output format.
 
         Args:
-            articles: List of article dicts from a SourcePlugin.
+            article: Article dict returned by a SourcePlugin's
+                ``fetch(...)``. Includes ``title``, ``text``,
+                ``url``. Whether ``text`` is full body or summary
+                is decided upstream by the source's ``summary``
+                argument; the output plugin renders whatever it's
+                given.
             tts_base_url: Base URL for TTS audio endpoints.
             voice: Voice to use for TTS references.
             language: Language to use for TTS references.
-            mode: "full" (include body), "summary" (header only),
-                  or "nextArticle" (header of next article).
 
         Returns:
             Formatted string (e.g. XML).
