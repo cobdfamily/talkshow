@@ -11,8 +11,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Install deps without touching project source first so this layer
-# caches across source-only rebuilds.
-COPY pyproject.toml uv.lock ./
+# caches across source-only rebuilds. README.md is referenced by
+# pyproject.toml's `readme = ...` so it has to be present even
+# during the deps-only sync.
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 # Now bring the source and install the project itself.
