@@ -5,6 +5,32 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-28
+
+### Changed (breaking)
+- The whole HTTP API moves under a `/v1/*` prefix.
+  Concretely:
+    - `/speak`         -> `/v1/speak`
+    - `/plugins`       -> `/v1/plugins`
+    - `/plugins/{type}` -> `/v1/plugins/{type}`
+  The unversioned `/` health endpoint stays put so
+  orchestration probes don't have to know the API
+  version. Bumping to `/v2` later is the sanctioned
+  way to make breaking changes; clients pin the
+  version they speak.
+
+### Migration
+
+Every caller needs to update the path. There's no
+back-compat shim; `/speak` now 404s. The query and
+body shape is unchanged.
+
+  before: GET /speak?text=hi
+  after:  GET /v1/speak?text=hi
+
+  before: GET /plugins
+  after:  GET /v1/plugins
+
 ## [0.5.0] - 2026-04-27
 
 ### Added
@@ -127,7 +153,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cobdfamily/talkshow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cobdfamily/talkshow/compare/v0.3.0...v0.4.0

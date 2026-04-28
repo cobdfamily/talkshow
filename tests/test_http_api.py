@@ -95,7 +95,7 @@ def client():
 
 class TestSpeakText:
     def test_get_with_text(self, client, fake_tts):
-        r = client.get("/speak", params={"text": "hello", "engine": "fake"})
+        r = client.get("/v1/speak", params={"text": "hello", "engine": "fake"})
         assert r.status_code == 200
         assert r.headers["content-type"] == "audio/wav"
         assert fake_tts.last_call["text"] == "hello"
@@ -103,7 +103,7 @@ class TestSpeakText:
 
     def test_post_text_in_body(self, client, fake_tts):
         r = client.post(
-            "/speak",
+            "/v1/speak",
             params={"engine": "fake"},
             json={"text": "from body"},
         )
@@ -112,7 +112,7 @@ class TestSpeakText:
 
     def test_post_query_overrides_body(self, client, fake_tts):
         r = client.post(
-            "/speak",
+            "/v1/speak",
             params={"text": "from-query", "engine": "fake"},
             json={"text": "from-body"},
         )
@@ -121,7 +121,7 @@ class TestSpeakText:
         assert fake_tts.last_call["text"] == "from-query"
 
     def test_no_input_returns_400(self, client):
-        r = client.get("/speak", params={"engine": "fake"})
+        r = client.get("/v1/speak", params={"engine": "fake"})
         assert r.status_code == 400
         assert "ssml" in r.json()["detail"]
 
@@ -134,7 +134,7 @@ class TestSpeakText:
 class TestSpeakSSML:
     def test_ssml_passes_through_verbatim(self, client, fake_tts):
         ssml = "<speak><voice name='x'>hi</voice></speak>"
-        r = client.get("/speak", params={"ssml": ssml, "engine": "fake"})
+        r = client.get("/v1/speak", params={"ssml": ssml, "engine": "fake"})
         assert r.status_code == 200
         assert fake_tts.last_call["ssml"] == ssml
         # text-shaped path is empty when SSML wins
@@ -142,7 +142,7 @@ class TestSpeakSSML:
 
     def test_ssml_takes_precedence_over_text(self, client, fake_tts):
         r = client.get(
-            "/speak",
+            "/v1/speak",
             params={"ssml": "<speak>x</speak>", "text": "ignored", "engine": "fake"},
         )
         assert r.status_code == 200
@@ -158,7 +158,7 @@ class TestSpeakSSML:
 class TestSpeakURL:
     def test_url_fetches_via_source_plugin(self, client, fake_tts, fake_source):
         r = client.get(
-            "/speak",
+            "/v1/speak",
             params={
                 "url": "https://example.com",
                 "offset": 2,
@@ -176,7 +176,7 @@ class TestSpeakURL:
 
     def test_url_with_summary_true(self, client, fake_tts, fake_source):
         r = client.get(
-            "/speak",
+            "/v1/speak",
             params={
                 "url": "https://example.com",
                 "summary": "true",
@@ -189,7 +189,7 @@ class TestSpeakURL:
 
     def test_url_unknown_source_returns_404(self, client):
         r = client.get(
-            "/speak",
+            "/v1/speak",
             params={
                 "url": "https://example.com",
                 "source": "nope",
@@ -206,7 +206,7 @@ class TestSpeakURL:
 
 class TestSpeakEngine:
     def test_unknown_engine_returns_404(self, client):
-        r = client.get("/speak", params={"text": "hi", "engine": "nope"})
+        r = client.get("/v1/speak", params={"text": "hi", "engine": "nope"})
         assert r.status_code == 404
 
 
@@ -217,7 +217,7 @@ class TestSpeakEngine:
 
 class TestPluginRoutes:
     def test_list_all_plugins(self, client):
-        r = client.get("/plugins")
+        r = client.get("/v1/plugins")
         assert r.status_code == 200
         body = r.json()
         assert "tts" in body
@@ -226,12 +226,12 @@ class TestPluginRoutes:
         assert "outputs" not in body
 
     def test_list_plugins_by_type(self, client):
-        r = client.get("/plugins/tts")
+        r = client.get("/v1/plugins/tts")
         assert r.status_code == 200
         assert any(p["name"] == "fake" for p in r.json()["tts"])
 
     def test_unknown_plugin_type_returns_404(self, client):
-        r = client.get("/plugins/outputs")
+        r = client.get("/v1/plugins/outputs")
         assert r.status_code == 404
 
 

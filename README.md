@@ -2,9 +2,9 @@
 
 [![test](https://github.com/cobdfamily/talkshow/actions/workflows/test.yml/badge.svg)](https://github.com/cobdfamily/talkshow/actions/workflows/test.yml)
 
-FastAPI TTS microservice. One endpoint — `/speak` — synthesises
-audio from raw SSML, plain text, or content fetched via a source
-plugin. Caches rendered audio on disk. See
+FastAPI TTS microservice. One endpoint — `/v1/speak` —
+synthesises audio from raw SSML, plain text, or content fetched
+via a source plugin. Caches rendered audio on disk. See
 [`PROJECT.md`](PROJECT.md) for the architecture and the full
 argument list.
 

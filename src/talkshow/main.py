@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 load_dotenv()
 
@@ -23,17 +23,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Talkshow",
     description=(
-        "A text-to-speech microservice. One endpoint, /speak, "
+        "A text-to-speech microservice. One endpoint, /v1/speak, "
         "synthesises audio from raw SSML, plain text, or content "
         "fetched via a source plugin (eg. WordPress). Plugin "
         "architecture for TTS engines and data sources."
     ),
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
-app.include_router(tts.router)
-app.include_router(plugins.router)
+# Whole API lives under /v1/* for explicit versioning. Bumping to
+# /v2 later is the sanctioned way to make breaking changes; clients
+# pin the version they speak. Health endpoint stays unversioned at
+# / so orchestration probes don't have to know the API version.
+v1 = APIRouter(prefix="/v1")
+v1.include_router(tts.router)
+v1.include_router(plugins.router)
+app.include_router(v1)
 
 
 @app.get("/", tags=["Health"])

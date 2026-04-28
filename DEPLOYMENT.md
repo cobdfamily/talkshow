@@ -48,7 +48,7 @@ Azure TTS plugin.
 MSTTS_SUBSCRIPTION_KEY=<your-key>
 MSTTS_REGION=<azure-region>           # eg. eastus
 
-# Defaults applied when /speak doesn't override
+# Defaults applied when /v1/speak doesn't override
 MSTTS_DEFAULT_VOICE=en-US-EmmaMultilingualNeural
 MSTTS_DEFAULT_LANGUAGE=en-US
 MSTTS_DEFAULT_RATE=0%
@@ -102,11 +102,11 @@ Behind your TLS reverse proxy, route
 curl -fsS https://talkshow.cobd.ca/
 
 # Plugin discovery
-curl -fsS https://talkshow.cobd.ca/plugins | jq
+curl -fsS https://talkshow.cobd.ca/v1/plugins | jq
 
 # Synthesise a quick test (requires Azure key configured)
 curl -fsS \
-  "https://talkshow.cobd.ca/speak?text=hello+world" \
+  "https://talkshow.cobd.ca/v1/speak?text=hello+world" \
   > /tmp/talkshow-test.wav
 file /tmp/talkshow-test.wav    # should report RIFF WAV
 ```

@@ -239,7 +239,7 @@ def test_rss_plugin_drives_speak_endpoint(monkeypatch):
     client = TestClient(app, raise_server_exceptions=False)
 
     r = client.get(
-        "/speak",
+        "/v1/speak",
         params={
             "url": "https://feed.example/rss",
             "source": "rss",

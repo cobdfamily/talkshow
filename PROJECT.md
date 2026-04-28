@@ -4,11 +4,12 @@ FastAPI (Python) TTS microservice. One endpoint, two plugin types, file-based au
 
 ## Architecture
 
-- **One endpoint:** `/speak`. Returns audio/wav.
-- **Two plugin types:** `tts/` (synthesis engines) and `sources/` (content fetchers). Each extends an ABC in `app/plugins/base.py` and is auto-discovered by `app/plugins/loader.py`.
+- **One endpoint:** `/v1/speak`. Returns audio/wav.
+- **Two plugin types:** `tts/` (synthesis engines) and `sources/` (content fetchers). Each extends an ABC in `src/talkshow/plugins/base.py` and is auto-discovered by `src/talkshow/plugins/loader.py`.
 - **Caching lives in plugins,** not core. Path: `cache/<plugin>/<language>/<voice>/<sha512-128>-<rate>-<pitch>.wav`. Serve from cache when the file exists.
+- **Versioning:** the whole API lives under `/v1/*`. Bumping to `/v2` later is the sanctioned way to make breaking changes; clients pin the version they speak. The unversioned `/` health endpoint is always reachable, regardless of API version.
 
-## /speak
+## /v1/speak
 
 Three mutually substitutable input forms; precedence is `ssml > text > url`:
 
