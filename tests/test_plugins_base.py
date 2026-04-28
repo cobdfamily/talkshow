@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.plugins.base import TTSPlugin, SourcePlugin, OutputPlugin
+from app.plugins.base import SourcePlugin, TTSPlugin
 
 
 # --- Concrete stubs for testing the ABCs ---
@@ -25,15 +25,6 @@ class StubSource(SourcePlugin):
 
     async def fetch(self, url, *, offset=0, summary=False):
         return {"title": "t", "text": "t", "url": url}
-
-
-class StubOutput(OutputPlugin):
-    name = "stub"
-    description = "test stub"
-    content_type = "text/plain"
-
-    async def render(self, article, *, tts_base_url="", voice=None, language=None):
-        return "ok"
 
 
 # --- Hash algorithm tests ---

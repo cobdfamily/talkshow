@@ -8,7 +8,7 @@ from fastapi import FastAPI
 load_dotenv()
 
 from app.plugins import loader
-from app.routes import outputs, plugins, sources, tts
+from app.routes import plugins, tts
 
 
 @asynccontextmanager
@@ -20,17 +20,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Talkshow",
     description=(
-        "A text-to-speech microservice with a plugin architecture for TTS engines, "
-        "data sources, and output formatters. Supports Microsoft Azure TTS, "
-        "WordPress data sources, and Twilio XML / Signalwire LAML output."
+        "A text-to-speech microservice. One endpoint, /speak, "
+        "synthesises audio from raw SSML, plain text, or content "
+        "fetched via a source plugin (eg. WordPress). Plugin "
+        "architecture for TTS engines and data sources."
     ),
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
 app.include_router(tts.router)
-app.include_router(sources.router)
-app.include_router(outputs.router)
 app.include_router(plugins.router)
 
 

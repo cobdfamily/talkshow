@@ -1,8 +1,9 @@
 # talkshow
 
-FastAPI TTS microservice with a plugin architecture for TTS engines,
-data sources, and output formatters. Caches rendered audio on disk.
-See `PROJECT.md` for the full architecture.
+FastAPI TTS microservice. One endpoint — `/speak` — synthesises
+audio from raw SSML, plain text, or content fetched via a source
+plugin. Caches rendered audio on disk. See `PROJECT.md` for the
+architecture and the full argument list.
 
 ## Install and run
 
@@ -11,18 +12,17 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Docs are auto-generated at `/docs` and `/redoc`.
+Auto-generated docs at `/docs` and `/redoc`.
 
 ## Plugins
 
-Three extension points under `app/plugins/`:
+Two extension points under `app/plugins/`:
 
-- `sources/` — article sources
-- `tts/` — TTS engines (default: azure)
-- `outputs/` — output formatters (e.g., Twilio XML)
+- `tts/` — synthesis engines (default: `azure`)
+- `sources/` — content fetchers (default: `wordpress`)
 
 Each plugin subclasses the ABC in `app/plugins/base.py` and is
-auto-discovered by `app/plugins/loader.py`.
+auto-discovered at startup by `app/plugins/loader.py`.
 
 ## Test
 

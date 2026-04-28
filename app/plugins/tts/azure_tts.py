@@ -39,6 +39,7 @@ class AzureTTS(TTSPlugin):
         self,
         text: str,
         *,
+        ssml: str | None = None,
         voice: str | None = None,
         language: str | None = None,
         rate: str | None = None,
@@ -49,7 +50,14 @@ class AzureTTS(TTSPlugin):
         rate = rate or self._get_default("rate", "0%")
         pitch = pitch or self._get_default("pitch", "0%")
 
-        cached = self.cache_path(text, language, voice, rate, pitch)
+        # When SSML is supplied verbatim, the cache key is the SSML
+        # itself plus the voice/language for layout purposes only —
+        # rate and pitch are baked into the SSML so we use placeholder
+        # cache-key values.
+        if ssml:
+            cached = self.cache_path(ssml, language, voice, "ssml", "ssml")
+        else:
+            cached = self.cache_path(text, language, voice, rate, pitch)
 
         if cached.exists():
             async for chunk in self._stream_file(cached):
@@ -58,7 +66,8 @@ class AzureTTS(TTSPlugin):
 
         cached.parent.mkdir(parents=True, exist_ok=True)
 
-        audio_data = await self._synthesize_to_bytes(text, voice, language, rate, pitch)
+        final_ssml = ssml if ssml else self._build_ssml(text, voice, language, rate, pitch)
+        audio_data = await self._synthesize_to_bytes(final_ssml, voice)
 
         cached.write_bytes(audio_data)
 
@@ -66,18 +75,14 @@ class AzureTTS(TTSPlugin):
         for i in range(0, len(audio_data), chunk_size):
             yield audio_data[i : i + chunk_size]
 
-    async def _synthesize_to_bytes(
-        self, text: str, voice: str, language: str, rate: str, pitch: str
-    ) -> bytes:
+    async def _synthesize_to_bytes(self, ssml: str, voice: str) -> bytes:
         """Run the Azure Speech SDK synchronous synthesis in a thread."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, self._synthesize_sync, text, voice, language, rate, pitch
+            None, self._synthesize_sync, ssml, voice,
         )
 
-    def _synthesize_sync(
-        self, text: str, voice: str, language: str, rate: str, pitch: str
-    ) -> bytes:
+    def _synthesize_sync(self, ssml: str, voice: str) -> bytes:
         key = os.getenv("MSTTS_SUBSCRIPTION_KEY", "")
         region = os.getenv("MSTTS_REGION", "eastus")
 
@@ -91,7 +96,6 @@ class AzureTTS(TTSPlugin):
             speech_config=speech_config, audio_config=None
         )
 
-        ssml = self._build_ssml(text, voice, language, rate, pitch)
         result = synthesizer.speak_ssml_async(ssml).get()
 
         if result.reason == speechsdk.ResultReason.Canceled:

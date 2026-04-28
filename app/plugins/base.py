@@ -28,16 +28,24 @@ class TTSPlugin(ABC):
         self,
         text: str,
         *,
+        ssml: str | None = None,
         voice: str | None = None,
         language: str | None = None,
         rate: str | None = None,
         pitch: str | None = None,
     ) -> AsyncIterator[bytes]:
-        """Synthesize text to speech and yield audio chunks.
+        """Synthesize speech and yield audio chunks.
+
+        When ``ssml`` is provided it is sent verbatim to the engine
+        and ``text`` / ``voice`` / ``language`` / ``rate`` / ``pitch``
+        are ignored (the SSML carries those itself). Otherwise the
+        plugin wraps ``text`` in an SSML envelope built from the
+        prosody arguments.
 
         Implementations should:
-        1. Check cache via `cache_path()` — if the file exists, stream it.
-        2. Otherwise, synthesize, write the file, and stream.
+          1. Check cache via ``cache_path()`` — if the file exists,
+             stream it.
+          2. Otherwise, synthesize, write the file, and stream.
         """
         ...
 
@@ -99,40 +107,3 @@ class SourcePlugin(ABC):
         ...
 
 
-class OutputPlugin(ABC):
-    """Base class for output formatter plugins.
-
-    Output plugins produce non-audio responses, such as Twilio XML / Signalwire LAML
-    for phone system navigation.
-    """
-
-    name: str  # e.g. "twilio_xml"
-    description: str
-    content_type: str  # e.g. "application/xml"
-
-    @abstractmethod
-    async def render(
-        self,
-        article: dict,
-        *,
-        tts_base_url: str = "",
-        voice: str | None = None,
-        language: str | None = None,
-    ) -> str:
-        """Render a single article into the output format.
-
-        Args:
-            article: Article dict returned by a SourcePlugin's
-                ``fetch(...)``. Includes ``title``, ``text``,
-                ``url``. Whether ``text`` is full body or summary
-                is decided upstream by the source's ``summary``
-                argument; the output plugin renders whatever it's
-                given.
-            tts_base_url: Base URL for TTS audio endpoints.
-            voice: Voice to use for TTS references.
-            language: Language to use for TTS references.
-
-        Returns:
-            Formatted string (e.g. XML).
-        """
-        ...

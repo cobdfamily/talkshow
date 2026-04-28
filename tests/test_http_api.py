@@ -1,18 +1,18 @@
-"""HTTP API tests using FastAPI's TestClient.
+"""HTTP API tests via FastAPI's TestClient.
 
-Tests all routes via both GET and POST, parameter merging,
-error handling, and text combination logic.
+Talkshow has a single endpoint: ``/speak``. It accepts content as
+SSML (verbatim), plain text, or by fetching a source plugin. These
+tests exercise all three input shapes plus the parameter-merging
+contract on POST (query takes precedence over body).
 """
 
 from __future__ import annotations
-
-from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.plugins import loader
-from app.plugins.base import TTSPlugin, SourcePlugin, OutputPlugin
+from app.plugins.base import SourcePlugin, TTSPlugin
 
 
 # --- Stub plugins for HTTP tests ---
@@ -24,9 +24,13 @@ class FakeTTS(TTSPlugin):
     def __init__(self):
         self.last_call = {}
 
-    async def synthesize(self, text, *, voice=None, language=None, rate=None, pitch=None):
+    async def synthesize(
+        self, text, *,
+        ssml=None, voice=None, language=None, rate=None, pitch=None,
+    ):
         self.last_call = {
             "text": text,
+            "ssml": ssml,
             "voice": voice,
             "language": language,
             "rate": rate,
@@ -36,10 +40,14 @@ class FakeTTS(TTSPlugin):
 
 
 class FakeSource(SourcePlugin):
-    name = "fakesrc"
+    name = "wordpress"  # so default source resolution finds it
     description = "Fake source for testing"
 
+    def __init__(self):
+        self.last_call = {}
+
     async def fetch(self, url, *, offset=0, summary=False):
+        self.last_call = {"url": url, "offset": offset, "summary": summary}
         title = f"Article {offset}"
         body = f"Content from {url} at offset {offset}"
         excerpt = f"Summary of article {offset}"
@@ -52,32 +60,26 @@ class FakeSource(SourcePlugin):
         }
 
 
-class FakeOutput(OutputPlugin):
-    name = "fakeout"
-    description = "Fake output for testing"
-    content_type = "text/plain"
+@pytest.fixture
+def fake_tts():
+    return FakeTTS()
 
-    async def render(
-        self, article, *,
-        tts_base_url="", voice=None, language=None,
-    ):
-        return f"Article: {article['title']} :: {article['text']}"
+
+@pytest.fixture
+def fake_source():
+    return FakeSource()
 
 
 @pytest.fixture(autouse=True)
-def setup_fake_plugins():
+def setup_fake_plugins(fake_tts, fake_source):
     """Register fake plugins before each test, clean up after."""
     loader._tts_plugins.clear()
     loader._source_plugins.clear()
-    loader._output_plugins.clear()
-
-    loader.register_tts(FakeTTS())
-    loader.register_source(FakeSource())
-    loader.register_output(FakeOutput())
+    loader.register_tts(fake_tts)
+    loader.register_source(fake_source)
     yield
     loader._tts_plugins.clear()
     loader._source_plugins.clear()
-    loader._output_plugins.clear()
 
 
 @pytest.fixture
@@ -86,262 +88,160 @@ def client():
     return TestClient(app, raise_server_exceptions=False)
 
 
-# ========== TTS ROUTES ==========
-
-class TestTTSGet:
-    def test_get_tts_with_text(self, client):
-        resp = client.get("/speak", params={"text": "hello", "engine": "fake"})
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == "audio/wav"
-        assert len(resp.content) > 0
-
-    def test_get_tts_no_text_returns_400(self, client):
-        resp = client.get("/speak")
-        assert resp.status_code == 400
-        assert "No text" in resp.json()["detail"]
-
-    def test_get_tts_bad_engine_returns_404(self, client):
-        resp = client.get("/speak", params={"text": "hi", "engine": "nonexistent"})
-        assert resp.status_code == 404
-        assert "nonexistent" in resp.json()["detail"]
-
-    def test_get_tts_passes_params(self, client):
-        resp = client.get("/speak", params={
-            "text": "test",
-            "voice": "MyVoice",
-            "language": "fr-FR",
-            "rate": "+10%",
-            "pitch": "-5%",
-            "engine": "fake",
-        })
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["text"] == "test"
-        assert fake.last_call["voice"] == "MyVoice"
-        assert fake.last_call["language"] == "fr-FR"
-        assert fake.last_call["rate"] == "+10%"
-        assert fake.last_call["pitch"] == "-5%"
+# ===========================================================================
+# /speak — text input
+# ===========================================================================
 
 
-class TestTTSPost:
-    def test_post_tts_query_only(self, client):
-        resp = client.post("/speak", params={"text": "hello", "engine": "fake"})
-        assert resp.status_code == 200
+class TestSpeakText:
+    def test_get_with_text(self, client, fake_tts):
+        r = client.get("/speak", params={"text": "hello", "engine": "fake"})
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "audio/wav"
+        assert fake_tts.last_call["text"] == "hello"
+        assert fake_tts.last_call["ssml"] is None
 
-    def test_post_tts_body_only(self, client):
-        resp = client.post("/speak", json={"text": "hello", "engine": "fake"})
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["text"] == "hello"
-
-    def test_post_tts_combines_query_and_body_text(self, client):
-        resp = client.post("/speak", params={"text": "hello", "engine": "fake"}, json={"text": "world"})
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["text"] == "hello world"
-
-    def test_post_tts_query_text_first(self, client):
-        """Query text should come before body text."""
-        resp = client.post("/speak", params={"text": "first", "engine": "fake"}, json={"text": "second"})
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["text"] == "first second"
-
-    def test_post_tts_no_text_returns_400(self, client):
-        resp = client.post("/speak")
-        assert resp.status_code == 400
-
-    def test_post_tts_body_params_used_when_query_missing(self, client):
-        resp = client.post("/speak", json={
-            "text": "test",
-            "voice": "BodyVoice",
-            "language": "de-DE",
-            "rate": "+20%",
-            "pitch": "-10%",
-            "engine": "fake",
-        })
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["voice"] == "BodyVoice"
-        assert fake.last_call["language"] == "de-DE"
-        assert fake.last_call["rate"] == "+20%"
-        assert fake.last_call["pitch"] == "-10%"
-
-    def test_post_tts_query_params_override_body(self, client):
-        resp = client.post(
+    def test_post_text_in_body(self, client, fake_tts):
+        r = client.post(
             "/speak",
-            params={"text": "t", "voice": "QueryVoice", "engine": "fake"},
-            json={"voice": "BodyVoice"},
+            params={"engine": "fake"},
+            json={"text": "from body"},
         )
-        assert resp.status_code == 200
-        fake = loader.get_tts("fake")
-        assert fake.last_call["voice"] == "QueryVoice"
+        assert r.status_code == 200
+        assert fake_tts.last_call["text"] == "from body"
+
+    def test_post_query_overrides_body(self, client, fake_tts):
+        r = client.post(
+            "/speak",
+            params={"text": "from-query", "engine": "fake"},
+            json={"text": "from-body"},
+        )
+        assert r.status_code == 200
+        # query wins
+        assert fake_tts.last_call["text"] == "from-query"
+
+    def test_no_input_returns_400(self, client):
+        r = client.get("/speak", params={"engine": "fake"})
+        assert r.status_code == 400
+        assert "ssml" in r.json()["detail"]
 
 
-# ========== SOURCE ROUTES ==========
-
-class TestSourceGet:
-    def test_get_source_article(self, client):
-        resp = client.get("/source", params={
-            "name": "fakesrc",
-            "url": "https://example.com",
-            "offset": 1,
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["title"] == "Article 1"
-        assert data["offset"] == 1
-
-    def test_get_source_default_offset_zero(self, client):
-        resp = client.get("/source", params={
-            "name": "fakesrc",
-            "url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        assert resp.json()["offset"] == 0
-
-    def test_get_source_summary_true_returns_excerpt(self, client):
-        resp = client.get("/source", params={
-            "name": "fakesrc",
-            "url": "https://example.com",
-            "summary": "true",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        # summary=True puts the excerpt into `text`
-        assert data["text"].startswith("Summary of article")
-
-    def test_get_source_missing_name_returns_400(self, client):
-        resp = client.get("/source", params={"url": "https://example.com"})
-        assert resp.status_code == 400
-        assert "name" in resp.json()["detail"]
-
-    def test_get_source_missing_url_returns_400(self, client):
-        resp = client.get("/source", params={"name": "fakesrc"})
-        assert resp.status_code == 400
-        assert "url" in resp.json()["detail"]
-
-    def test_get_source_unknown_plugin_returns_404(self, client):
-        resp = client.get("/source", params={"name": "nope", "url": "https://x.com"})
-        assert resp.status_code == 404
+# ===========================================================================
+# /speak — SSML input
+# ===========================================================================
 
 
-class TestSourcePost:
-    def test_post_source_query_params(self, client):
-        resp = client.post("/source", params={
-            "name": "fakesrc",
+class TestSpeakSSML:
+    def test_ssml_passes_through_verbatim(self, client, fake_tts):
+        ssml = "<speak><voice name='x'>hi</voice></speak>"
+        r = client.get("/speak", params={"ssml": ssml, "engine": "fake"})
+        assert r.status_code == 200
+        assert fake_tts.last_call["ssml"] == ssml
+        # text-shaped path is empty when SSML wins
+        assert fake_tts.last_call["text"] == ""
+
+    def test_ssml_takes_precedence_over_text(self, client, fake_tts):
+        r = client.get(
+            "/speak",
+            params={"ssml": "<speak>x</speak>", "text": "ignored", "engine": "fake"},
+        )
+        assert r.status_code == 200
+        assert fake_tts.last_call["ssml"] == "<speak>x</speak>"
+        assert fake_tts.last_call["text"] == ""
+
+
+# ===========================================================================
+# /speak — URL input (source fetch)
+# ===========================================================================
+
+
+class TestSpeakURL:
+    def test_url_fetches_via_source_plugin(self, client, fake_tts, fake_source):
+        r = client.get(
+            "/speak",
+            params={
+                "url": "https://example.com",
+                "offset": 2,
+                "engine": "fake",
+            },
+        )
+        assert r.status_code == 200
+        assert fake_source.last_call == {
             "url": "https://example.com",
             "offset": 2,
-        })
-        assert resp.status_code == 200
-        assert resp.json()["offset"] == 2
+            "summary": False,
+        }
+        # Source returned the body (full mode); TTS got that text.
+        assert "offset 2" in fake_tts.last_call["text"]
 
-    def test_post_source_body_params(self, client):
-        resp = client.post("/source", json={
-            "name": "fakesrc",
-            "url": "https://example.com",
-            "offset": 1,
-        })
-        assert resp.status_code == 200
-        assert resp.json()["offset"] == 1
-
-    def test_post_source_summary_in_body(self, client):
-        resp = client.post("/source", json={
-            "name": "fakesrc",
-            "url": "https://example.com",
-            "summary": True,
-        })
-        assert resp.status_code == 200
-        assert resp.json()["text"].startswith("Summary of article")
-
-    def test_post_source_query_overrides_body(self, client):
-        resp = client.post(
-            "/source",
-            params={"name": "fakesrc", "url": "https://query.com"},
-            json={"name": "other", "url": "https://body.com"},
+    def test_url_with_summary_true(self, client, fake_tts, fake_source):
+        r = client.get(
+            "/speak",
+            params={
+                "url": "https://example.com",
+                "summary": "true",
+                "engine": "fake",
+            },
         )
-        assert resp.status_code == 200
-        assert "query.com" in resp.json()["text"]
+        assert r.status_code == 200
+        assert fake_source.last_call["summary"] is True
+        assert fake_tts.last_call["text"].startswith("Summary of article")
 
-
-# ========== OUTPUT ROUTES ==========
-
-class TestOutputGet:
-    def test_get_output(self, client):
-        resp = client.get("/output/fakeout", params={
-            "source_name": "fakesrc",
-            "source_url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        assert "Article: Article 0" in resp.text
-
-    def test_get_output_missing_source_returns_400(self, client):
-        resp = client.get("/output/fakeout")
-        assert resp.status_code == 400
-
-    def test_get_output_unknown_format_returns_404(self, client):
-        resp = client.get("/output/nope", params={
-            "source_name": "fakesrc",
-            "source_url": "https://example.com",
-        })
-        assert resp.status_code == 404
-
-
-class TestOutputPost:
-    def test_post_output_query(self, client):
-        resp = client.post("/output/fakeout", params={
-            "source_name": "fakesrc",
-            "source_url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        assert "Article: Article 0" in resp.text
-
-    def test_post_output_body(self, client):
-        resp = client.post("/output/fakeout", json={
-            "source_name": "fakesrc",
-            "source_url": "https://example.com",
-        })
-        assert resp.status_code == 200
-        assert "Article: Article 0" in resp.text
-
-    def test_post_output_query_overrides_body(self, client):
-        resp = client.post(
-            "/output/fakeout",
-            params={"source_name": "fakesrc", "source_url": "https://query.com"},
-            json={"source_name": "other", "source_url": "https://body.com"},
+    def test_url_unknown_source_returns_404(self, client):
+        r = client.get(
+            "/speak",
+            params={
+                "url": "https://example.com",
+                "source": "nope",
+                "engine": "fake",
+            },
         )
-        assert resp.status_code == 200
+        assert r.status_code == 404
 
 
-# ========== PLUGIN LISTING ROUTES ==========
+# ===========================================================================
+# /speak — engine selection
+# ===========================================================================
+
+
+class TestSpeakEngine:
+    def test_unknown_engine_returns_404(self, client):
+        r = client.get("/speak", params={"text": "hi", "engine": "nope"})
+        assert r.status_code == 404
+
+
+# ===========================================================================
+# /plugins — discovery
+# ===========================================================================
+
 
 class TestPluginRoutes:
     def test_list_all_plugins(self, client):
-        resp = client.get("/plugins")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "tts" in data
-        assert "sources" in data
-        assert "outputs" in data
+        r = client.get("/plugins")
+        assert r.status_code == 200
+        body = r.json()
+        assert "tts" in body
+        assert "sources" in body
+        # No "outputs" key any more.
+        assert "outputs" not in body
 
     def test_list_plugins_by_type(self, client):
-        resp = client.get("/plugins/tts")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "tts" in data
+        r = client.get("/plugins/tts")
+        assert r.status_code == 200
+        assert any(p["name"] == "fake" for p in r.json()["tts"])
 
-    def test_list_plugins_invalid_type(self, client):
-        resp = client.get("/plugins/bogus")
-        assert resp.status_code == 200
-        assert "error" in resp.json()
+    def test_unknown_plugin_type_returns_404(self, client):
+        r = client.get("/plugins/outputs")
+        assert r.status_code == 404
 
 
-# ========== HEALTH ==========
+# ===========================================================================
+# / — health endpoint stays
+# ===========================================================================
+
 
 class TestHealth:
-    def test_root(self, client):
-        resp = client.get("/")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["service"] == "talkshow"
-        assert data["status"] == "ok"
+    def test_root_health(self, client):
+        r = client.get("/")
+        assert r.status_code == 200
+        assert r.json()["service"] == "talkshow"
