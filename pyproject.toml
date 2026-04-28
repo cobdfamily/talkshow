@@ -1,6 +1,6 @@
 [project]
 name = "talkshow"
-version = "0.4.1"
+version = "0.5.0"
 description = "TTS microservice with a plugin architecture; one /speak endpoint covers SSML, plain text, and source-plugin fetches"
 readme = "README.md"
 license = "AGPL-3.0"
@@ -13,6 +13,8 @@ dependencies = [
   "python-dotenv>=1.0",
   "azure-cognitiveservices-speech>=1.40",
   "httpx>=0.28",
+  "feedparser>=6.0",
+  "beautifulsoup4>=4.12",
 ]
 
 [project.scripts]

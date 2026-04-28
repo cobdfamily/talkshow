@@ -5,6 +5,41 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-27
+
+### Added
+- `rss` source plugin (`src/talkshow/plugins/sources/rss.py`)
+  for any RSS or Atom feed. Inspired by `Other/undercurrent`
+  but reduced to the single `fetch(url, offset, summary)`
+  contract.
+  - `summary=True` returns
+    `"[title] by [author] on [date]"` as the renderable text.
+  - `summary=False` returns the full body, with `<img>` tags
+    rewritten as `"Image description: [alt text]"`. Empty alt
+    becomes `"(no description)"` so a TTS user always hears
+    that an image WAS there.
+  - Body resolution: `content:encoded` first, then a long
+    `description`/`summary`, then a fallback fetch of the
+    article URL with main-content extraction
+    (`<article>` / `<main>` / `entry-content` /
+    `post-content` / `article-body` / `story-body`).
+  - Robust date formatting across RFC 822 and ISO 8601
+    shapes; falls back to the raw string on a miss.
+  - `User-Agent` header set to a real browser string so
+    feeds that block default `python-httpx` UAs still
+    respond.
+- Two new dependencies: `feedparser>=6.0` (RSS / Atom
+  variants) and `beautifulsoup4>=4.12` (HTML parsing +
+  alt-text rewriting). Both standard for this kind of
+  scraping.
+
+### Tests
+- `tests/test_rss_source.py` — six cases covering the
+  full-content path, summary string assembly, the URL
+  fallback path, image alt-text replacement (with and
+  without alt), out-of-range offset, and an end-to-end
+  flow through `/speak?source=rss&url=...`.
+
 ## [0.4.1] - 2026-04-27
 
 ### Changed (breaking)
@@ -92,7 +127,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cobdfamily/talkshow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cobdfamily/talkshow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cobdfamily/talkshow/compare/v0.2.0...v0.3.0
