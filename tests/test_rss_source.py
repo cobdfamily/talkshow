@@ -108,33 +108,37 @@ def patch_httpx(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_full_content_summary(patch_httpx):
+async def test_fetch_full_content_header(patch_httpx):
     patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
     article = await RSSSource().fetch(
-        "https://feed.example/rss", offset=0, summary=True,
+        "https://feed.example/rss", offset=0, part="header",
     )
     assert article["title"] == "First Story"
     assert article["url"] == "https://news.example/first"
     assert article["offset"] == 0
-    # summary string follows the spec
-    assert article["summary"].startswith("First Story by")
-    assert "Jane Reporter" in article["summary"] or "jane@example.com" in article["summary"]
-    assert "April 27, 2026" in article["summary"]
-    # When summary=True, text == summary
-    assert article["text"] == article["summary"]
+    # Header line follows the strict format:
+    # "<title>. By: <author>. Published on: <date>"
+    assert article["header"].startswith("First Story. By: ")
+    assert "Jane Reporter" in article["header"] or "jane@example.com" in article["header"]
+    assert "Published on: April 27, 2026" in article["header"]
+    # When part="header", text == header.
+    assert article["text"] == article["header"]
 
 
 @pytest.mark.asyncio
 async def test_fetch_full_content_body_uses_content_encoded(patch_httpx):
     patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
     article = await RSSSource().fetch(
-        "https://feed.example/rss", offset=0, summary=False,
+        "https://feed.example/rss", offset=0, part="body",
     )
     body = article["text"]
     assert "The full article body lives here." in body
     assert "More body text after the image." in body
     # Image replaced with alt-text gloss
     assert "Image description: A diagram of the new bridge" in body
+    # Body must NOT include the header prefix.
+    assert "By: " not in body
+    assert "Published on:" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +151,7 @@ async def test_fetch_falls_through_to_article_url(patch_httpx):
     patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
     patch_httpx["https://news.example/second"] = ARTICLE_PAGE_HTML
     article = await RSSSource().fetch(
-        "https://feed.example/rss", offset=1, summary=False,
+        "https://feed.example/rss", offset=1, part="body",
     )
     body = article["text"]
     # Content came from the article HTML's <article> tag.
@@ -161,11 +165,264 @@ async def test_fetch_falls_through_to_article_url(patch_httpx):
 
 
 @pytest.mark.asyncio
+async def test_cloudflare_challenge_falls_back_to_description(patch_httpx):
+    """When the article page returns Cloudflare's 'Just a moment...'
+    interstitial, the plugin must NOT treat it as the article body."""
+    patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
+    patch_httpx["https://news.example/second"] = (
+        '<!doctype html><html><head><title>Just a moment...</title></head>'
+        '<body><script src="https://challenges.cloudflare.com/cdn-cgi/'
+        'challenge-platform/h/g/orchestrate/chl_page/v1?ray=abc"></script>'
+        '</body></html>'
+    )
+    article = await RSSSource().fetch(
+        "https://feed.example/rss", offset=1, part="body",
+    )
+    body = article["text"]
+    # We expect the feed item's description, not the Cloudflare page.
+    assert "Another teaser." in body
+    assert "Just a moment" not in body
+    assert "challenges.cloudflare.com" not in body
+
+
+@pytest.mark.asyncio
 async def test_offset_out_of_range_raises_indexerror(patch_httpx):
     patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
-    with pytest.raises(IndexError, match="out of range"):
+    with pytest.raises(IndexError):
         await RSSSource().fetch(
             "https://feed.example/rss", offset=99,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Pagination — follow atom:link rel="next" until the offset is found
+# ---------------------------------------------------------------------------
+
+
+def _paginated_page(items: list[tuple[str, str]], next_url: str | None) -> str:
+    """Render a small RSS page with optional rel='next' atom link."""
+    next_link = (
+        f'<atom:link rel="next" href="{next_url}" />' if next_url else ""
+    )
+    item_xml = "".join(
+        f'<item><title>{title}</title><link>{link}</link>'
+        f'<description>{title}</description></item>'
+        for title, link in items
+    )
+    return (
+        '<?xml version="1.0"?>'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">'
+        '<channel><title>P</title>'
+        f'{next_link}{item_xml}'
+        '</channel></rss>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_pagination_follows_rel_next(patch_httpx):
+    """offset=3 against a feed with 2 items per page must follow
+    rel='next' and return the 4th item overall (index 1 of page 2)."""
+    patch_httpx["https://feed.example/rss"] = _paginated_page(
+        [("p1-a", "https://x/1a"), ("p1-b", "https://x/1b")],
+        next_url="https://feed.example/rss?page=2",
+    )
+    patch_httpx["https://feed.example/rss?page=2"] = _paginated_page(
+        [("p2-a", "https://x/2a"), ("p2-b", "https://x/2b")],
+        next_url="https://feed.example/rss?page=3",
+    )
+
+    article = await RSSSource().fetch(
+        "https://feed.example/rss", offset=3, part="header",
+    )
+    assert article["title"] == "p2-b"
+    assert article["url"] == "https://x/2b"
+    # offset is reported back as the input offset (not the within-page index).
+    assert article["offset"] == 3
+
+
+@pytest.mark.asyncio
+async def test_pagination_stops_at_chain_end(patch_httpx):
+    """When rel='next' runs out and the offset still isn't found,
+    raise IndexError rather than looping."""
+    patch_httpx["https://feed.example/rss"] = _paginated_page(
+        [("only-1", "https://x/1"), ("only-2", "https://x/2")],
+        next_url=None,  # no more pages
+    )
+    with pytest.raises(IndexError, match="no more pages"):
+        await RSSSource().fetch(
+            "https://feed.example/rss", offset=10,
+        )
+
+
+@pytest.mark.asyncio
+async def test_pagination_respects_env_page_limit(patch_httpx, monkeypatch):
+    """RSS_PAGE_LIMIT caps how many pages we'll fetch even if more
+    are advertised. A bad caller can't drag the plugin into hundreds
+    of HTTP fetches."""
+    monkeypatch.setenv("RSS_PAGE_LIMIT", "2")
+    patch_httpx["https://feed.example/rss"] = _paginated_page(
+        [("p1", "https://x/1")], next_url="https://feed.example/rss?page=2",
+    )
+    patch_httpx["https://feed.example/rss?page=2"] = _paginated_page(
+        [("p2", "https://x/2")], next_url="https://feed.example/rss?page=3",
+    )
+    # offset=2 needs page 3, but the cap is 2 — must raise.
+    with pytest.raises(IndexError, match="page limit"):
+        await RSSSource().fetch(
+            "https://feed.example/rss", offset=2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_negative_offset_rejected(patch_httpx):
+    patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
+    with pytest.raises(IndexError, match=">= 0"):
+        await RSSSource().fetch(
+            "https://feed.example/rss", offset=-1,
+        )
+
+
+def test_page_limit_env_parsing(monkeypatch):
+    """Default, override, garbage, and negative values."""
+    from talkshow.plugins.sources.rss import RSSSource, _DEFAULT_PAGE_LIMIT
+
+    monkeypatch.delenv("RSS_PAGE_LIMIT", raising=False)
+    assert RSSSource._page_limit() == _DEFAULT_PAGE_LIMIT
+
+    monkeypatch.setenv("RSS_PAGE_LIMIT", "25")
+    assert RSSSource._page_limit() == 25
+
+    monkeypatch.setenv("RSS_PAGE_LIMIT", "garbage")
+    assert RSSSource._page_limit() == _DEFAULT_PAGE_LIMIT
+
+    monkeypatch.setenv("RSS_PAGE_LIMIT", "-3")
+    assert RSSSource._page_limit() == _DEFAULT_PAGE_LIMIT
+
+
+# ---------------------------------------------------------------------------
+# Article-body extractor configuration
+# ---------------------------------------------------------------------------
+
+
+def test_match_extractor_picks_domain_specific_entry():
+    from talkshow.plugins.sources.rss import _match_extractor
+
+    config = {
+        "defaults": {"body_selectors": [".default"], "strip": []},
+        "domains": [
+            {
+                "match": ["bowenislandundercurrent.com", "*.glaciermedia.ca"],
+                "body_selectors": ['[itemprop="articleBody"]'],
+                "strip": [".inline-share"],
+            },
+            {
+                "match": ["custom.example"],
+                "body_selectors": [".custom-body"],
+            },
+        ],
+    }
+
+    e = _match_extractor("https://bowenislandundercurrent.com/the-mix/x", config)
+    assert e["body_selectors"] == ['[itemprop="articleBody"]']
+    assert e["strip"] == [".inline-share"]
+
+    e = _match_extractor("https://north.glaciermedia.ca/news/x", config)
+    assert e["body_selectors"] == ['[itemprop="articleBody"]']
+
+    e = _match_extractor("https://custom.example/post", config)
+    assert e["body_selectors"] == [".custom-body"]
+
+
+def test_match_extractor_falls_back_to_defaults():
+    from talkshow.plugins.sources.rss import _match_extractor
+
+    config = {
+        "defaults": {"body_selectors": [".default"], "strip": []},
+        "domains": [{"match": ["other.com"], "body_selectors": [".other"]}],
+    }
+    e = _match_extractor("https://nomatch.example/x", config)
+    assert e["body_selectors"] == [".default"]
+
+
+def test_match_extractor_is_case_insensitive_on_hostname():
+    from talkshow.plugins.sources.rss import _match_extractor
+
+    config = {
+        "defaults": {"body_selectors": [".default"], "strip": []},
+        "domains": [
+            {"match": ["bowenislandundercurrent.com"], "body_selectors": [".x"]},
+        ],
+    }
+    e = _match_extractor("https://BowenIslandUndercurrent.COM/x", config)
+    assert e["body_selectors"] == [".x"]
+
+
+def test_extractor_strip_removes_inline_junk(monkeypatch, tmp_path):
+    """Selectors in the matched extractor's `strip` list must be
+    cut from the body before text extraction."""
+    from talkshow.plugins.sources.rss import _extract_main_content
+
+    config_file = tmp_path / "extractors.yaml"
+    config_file.write_text(
+        "defaults:\n"
+        "  body_selectors: ['article']\n"
+        "  strip: ['.share-bar', '.related']\n"
+        "domains: []\n"
+    )
+    monkeypatch.setenv("TALKSHOW_RSS_EXTRACTORS", str(config_file))
+
+    html = (
+        "<html><body><article>"
+        "<p>Real body text.</p>"
+        "<div class='share-bar'>SHARE BUTTONS</div>"
+        "<div class='related'>RELATED ARTICLES</div>"
+        "<p>More real body.</p>"
+        "</article></body></html>"
+    )
+    out = _extract_main_content(html, "https://nomatch.example/x")
+    assert "Real body text." in out
+    assert "More real body." in out
+    assert "SHARE BUTTONS" not in out
+    assert "RELATED ARTICLES" not in out
+
+
+def test_extractor_env_override_loads_custom_file(monkeypatch, tmp_path):
+    """A user-supplied YAML at TALKSHOW_RSS_EXTRACTORS overrides
+    the bundled defaults."""
+    from talkshow.plugins.sources.rss import _load_extractors
+
+    config_file = tmp_path / "extractors.yaml"
+    config_file.write_text(
+        "defaults:\n"
+        "  body_selectors: ['.user-supplied']\n"
+        "  strip: []\n"
+        "domains: []\n"
+    )
+    monkeypatch.setenv("TALKSHOW_RSS_EXTRACTORS", str(config_file))
+
+    cfg = _load_extractors()
+    assert cfg["defaults"]["body_selectors"] == [".user-supplied"]
+
+
+def test_extractor_load_falls_back_when_override_unreadable(monkeypatch):
+    """If the env-pointed file doesn't exist or is malformed, the
+    loader silently falls back to the bundled config rather than
+    crashing the plugin."""
+    from talkshow.plugins.sources.rss import _load_extractors
+
+    monkeypatch.setenv("TALKSHOW_RSS_EXTRACTORS", "/no/such/file.yaml")
+    cfg = _load_extractors()
+    # Bundled defaults should still produce something usable.
+    assert "defaults" in cfg
+    assert cfg["defaults"].get("body_selectors")
+
+
+@pytest.mark.asyncio
+async def test_invalid_part_raises_valueerror(patch_httpx):
+    patch_httpx["https://feed.example/rss"] = RSS_WITH_FULL_CONTENT
+    with pytest.raises(ValueError, match="part must be"):
+        await RSSSource().fetch(
+            "https://feed.example/rss", offset=0, part="something_else",
         )
 
 
@@ -180,7 +437,7 @@ async def test_image_with_no_alt_renders_no_description_marker(patch_httpx):
         '</item></channel></rss>'
     )
     article = await RSSSource().fetch(
-        "https://feed.example/rss", offset=0, summary=False,
+        "https://feed.example/rss", offset=0, part="body",
     )
     assert "Image description: (no description)" in article["text"]
 

@@ -15,6 +15,7 @@ dependencies = [
   "httpx>=0.28",
   "feedparser>=6.0",
   "beautifulsoup4>=4.12",
+  "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -34,6 +35,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/talkshow"]
+# Ship the bundled rss_extractors.yaml inside the wheel. Hatchling
+# treats source-tree files outside .py as data; without this they
+# get stripped on build.
+include = [
+  "src/talkshow/plugins/sources/*.yaml",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

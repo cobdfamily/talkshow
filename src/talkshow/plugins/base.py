@@ -74,23 +74,27 @@ class SourcePlugin(ABC):
     Source plugins fetch one article from a URL. The contract is
     deliberately small — three knobs and an article dict back:
 
-      url      The URL to fetch from. May point at a single article
-               or at an index page that lists multiple.
-      offset   When the URL is an index, the zero-based index of
-               which article to fetch.
-      summary  ``True`` returns the article's summary (title + a
-               short description). ``False`` returns the full body.
+      url     The URL to fetch from. May point at a single article
+              or at an index page that lists multiple.
+      offset  When the URL is an index, the zero-based index of
+              which article to fetch.
+      part    ``"header"`` returns just the formatted intro line
+              (``"<title> - By: <author> - Published on: <date>"``).
+              ``"body"`` returns just the article body, no header.
 
     The plugin decides for itself whether ``url`` is an index or a
     single-article URL — call sites don't need to know.
 
-    Implementations return a dict with at minimum:
+    Implementations return a dict with these keys:
 
-      title, text, url
-
-    Plus an optional ``summary`` key that callers may render as the
-    short form. When ``summary`` is True, the ``text`` field SHOULD
-    contain the summary so dumb consumers still work.
+      title    The raw article title.
+      text     What the caller should synthesise. Driven by ``part``:
+               header line when ``part="header"``, body when ``"body"``.
+      url      The article's canonical URL.
+      header   The formatted header line, returned regardless of
+               ``part`` so callers can prepend it to the body if
+               they want a "title-card then article" flow.
+      offset   The offset that was honoured.
     """
 
     name: str  # e.g. "wordpress"
@@ -102,7 +106,7 @@ class SourcePlugin(ABC):
         url: str,
         *,
         offset: int = 0,
-        summary: bool = False,
+        part: str = "body",
     ) -> dict:
         ...
 

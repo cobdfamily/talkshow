@@ -4,7 +4,7 @@
 
   ssml -> sent verbatim to the TTS engine
   text -> wrapped in an SSML envelope built from voice/lang/rate/pitch
-  url  -> fetched via a source plugin (using offset + summary), then
+  url  -> fetched via a source plugin (using offset + part), then
           synthesised as text
 
 When more than one form is supplied, precedence is:
@@ -30,7 +30,10 @@ class SpeakBody(BaseModel):
     text: str | None = Field(None, description="Plain text to synthesise")
     url: str | None = Field(None, description="Source URL to fetch from")
     offset: int | None = Field(None, description="When url is an index, the article offset")
-    summary: bool | None = Field(None, description="Fetch a summary instead of full body")
+    part: str | None = Field(
+        None,
+        description="Which part of the source to speak: 'header' or 'body' (default body)",
+    )
     voice: str | None = Field(None, description="Voice name (e.g. en-US-EmmaMultilingualNeural)")
     language: str | None = Field(None, description="Language code (e.g. en-US)")
     rate: str | None = Field(None, description="Speech rate (e.g. +10%)")
@@ -45,7 +48,7 @@ async def _resolve_text(
     text: str | None,
     url: str | None,
     offset: int,
-    summary: bool,
+    part: str,
     source_name: str,
 ) -> tuple[str, str | None]:
     """Pick the synthesis input.
@@ -66,8 +69,10 @@ async def _resolve_text(
                 detail=f"Source '{source_name}' not found. Available: {available}",
             )
         try:
-            article = await plugin.fetch(url, offset=offset, summary=summary)
+            article = await plugin.fetch(url, offset=offset, part=part)
         except IndexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Source fetch failed: {e}")
@@ -84,7 +89,7 @@ async def _do_synthesize(
     text: str | None,
     url: str | None,
     offset: int,
-    summary: bool,
+    part: str,
     voice: str | None,
     language: str | None,
     rate: str | None,
@@ -97,7 +102,7 @@ async def _do_synthesize(
         text=text,
         url=url,
         offset=offset,
-        summary=summary,
+        part=part,
         source_name=source_name,
     )
 
@@ -158,8 +163,9 @@ _common = dict(
         "Synthesise speech audio. Provide one of: `ssml` (verbatim), "
         "`text` (plain), or `url` (fetched via the configured source "
         "plugin). When `url` is used, `offset` selects which article "
-        "from an index page and `summary` toggles excerpt vs full "
-        "body. Returns audio/wav."
+        "from an index page and `part` picks 'header' (just the "
+        "title/byline/date line) or 'body' (the article itself). "
+        "Returns audio/wav."
     ),
     **_common,
 )
@@ -168,7 +174,7 @@ async def synthesize_get(
     text: str | None = Query(None, description="Plain text to synthesise"),
     url: str | None = Query(None, description="Source URL"),
     offset: int = Query(0, description="Article offset (when url is an index)"),
-    summary: bool = Query(False, description="Summary vs full body"),
+    part: str = Query("body", description="Which part to speak: 'header' or 'body'"),
     voice: str | None = Query(None, description="Voice name"),
     language: str | None = Query(None, description="Language code"),
     rate: str | None = Query(None, description="Speech rate"),
@@ -181,7 +187,7 @@ async def synthesize_get(
         text=text,
         url=url,
         offset=offset,
-        summary=summary,
+        part=part,
         voice=voice,
         language=language,
         rate=rate,
@@ -204,7 +210,7 @@ async def synthesize_post(
     text: str | None = Query(None, description="Plain text"),
     url: str | None = Query(None, description="Source URL"),
     offset: int | None = Query(None, description="Article offset"),
-    summary: bool | None = Query(None, description="Summary vs full body"),
+    part: str | None = Query(None, description="Which part to speak: 'header' or 'body'"),
     voice: str | None = Query(None, description="Voice name"),
     language: str | None = Query(None, description="Language code"),
     rate: str | None = Query(None, description="Speech rate"),
@@ -217,7 +223,7 @@ async def synthesize_post(
     final_text = text or (body.text if body else None)
     final_url = url or (body.url if body else None)
     final_offset = offset if offset is not None else (body.offset if body else None)
-    final_summary = summary if summary is not None else (body.summary if body else None)
+    final_part = part or (body.part if body else None) or "body"
     final_voice = voice or (body.voice if body else None)
     final_language = language or (body.language if body else None)
     final_rate = rate or (body.rate if body else None)
@@ -230,7 +236,7 @@ async def synthesize_post(
         text=final_text,
         url=final_url,
         offset=final_offset or 0,
-        summary=bool(final_summary),
+        part=final_part,
         voice=final_voice,
         language=final_language,
         rate=final_rate,

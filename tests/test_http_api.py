@@ -46,16 +46,16 @@ class FakeSource(SourcePlugin):
     def __init__(self):
         self.last_call = {}
 
-    async def fetch(self, url, *, offset=0, summary=False):
-        self.last_call = {"url": url, "offset": offset, "summary": summary}
+    async def fetch(self, url, *, offset=0, part="body"):
+        self.last_call = {"url": url, "offset": offset, "part": part}
         title = f"Article {offset}"
         body = f"Content from {url} at offset {offset}"
-        excerpt = f"Summary of article {offset}"
+        header = f"Header for article {offset}"
         return {
             "title": title,
-            "text": excerpt if summary else body,
+            "text": header if part == "header" else body,
             "url": url,
-            "summary": excerpt,
+            "header": header,
             "offset": offset,
         }
 
@@ -169,23 +169,23 @@ class TestSpeakURL:
         assert fake_source.last_call == {
             "url": "https://example.com",
             "offset": 2,
-            "summary": False,
+            "part": "body",
         }
-        # Source returned the body (full mode); TTS got that text.
+        # Source returned the body (default); TTS got that text.
         assert "offset 2" in fake_tts.last_call["text"]
 
-    def test_url_with_summary_true(self, client, fake_tts, fake_source):
+    def test_url_with_part_header(self, client, fake_tts, fake_source):
         r = client.get(
             "/v1/speak",
             params={
                 "url": "https://example.com",
-                "summary": "true",
+                "part": "header",
                 "engine": "fake",
             },
         )
         assert r.status_code == 200
-        assert fake_source.last_call["summary"] is True
-        assert fake_tts.last_call["text"].startswith("Summary of article")
+        assert fake_source.last_call["part"] == "header"
+        assert fake_tts.last_call["text"].startswith("Header for article")
 
     def test_url_unknown_source_returns_404(self, client):
         r = client.get(

@@ -1,0 +1,50 @@
+# Per-domain article-body extractors for the RSS source plugin.
+#
+# When an item's RSS description is too short to be the full
+# article, the plugin fetches the article URL and extracts the body
+# from the HTML. This file controls how that extraction happens.
+#
+# Lookup order on each fetch:
+#   1. The article URL's hostname is matched against `domains` in
+#      order; the first entry whose `match` list contains a glob
+#      that fits wins. fnmatch syntax (`*.foo.com`, `bar.org`).
+#   2. If nothing matches, `defaults` is used.
+#
+# `body_selectors` is a list of CSS selectors tried in order;
+# first match wins. Falls back to `<body>` if none hit.
+#
+# `strip` is an optional list of CSS selectors for elements to
+# remove from inside the matched body before text extraction
+# (share buttons, related-content widgets, ad slots).
+#
+# Override path: set TALKSHOW_RSS_EXTRACTORS=/path/to/your.yaml
+# to ship a custom file without rebuilding the image.
+
+defaults:
+  body_selectors:
+    # Schema.org standard. Most modern news CMSes set this; try
+    # first to avoid <article> wrappers that some templates put
+    # around the entire page.
+    - '[itemprop="articleBody"]'
+    # WordPress + WP-clone class patterns.
+    - '[class*="entry-content"]'
+    - '[class*="post-content"]'
+    - '[class*="article-body"]'
+    - '[class*="story-body"]'
+    # HTML5 last-resort tags.
+    - article
+    - main
+  strip: []
+
+domains:
+  # Glacier Media — chain that publishes Bowen Island Undercurrent,
+  # most BC small-town papers, and a handful of Alberta titles. The
+  # default selectors already cover this site; the entry is here as
+  # a working example for adding other publishers.
+  - match:
+      - "bowenislandundercurrent.com"
+      - "*.bowenislandundercurrent.com"
+      - "*.glaciermedia.ca"
+    body_selectors:
+      - '[itemprop="articleBody"]'
+    strip: []

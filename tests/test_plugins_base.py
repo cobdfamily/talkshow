@@ -21,8 +21,8 @@ class StubSource(SourcePlugin):
     name = "stub"
     description = "test stub"
 
-    async def fetch(self, url, *, offset=0, summary=False):
-        return {"title": "t", "text": "t", "url": url}
+    async def fetch(self, url, *, offset=0, part="body"):
+        return {"title": "t", "text": "t", "url": url, "header": "t", "offset": offset}
 
 
 # --- Hash algorithm tests ---

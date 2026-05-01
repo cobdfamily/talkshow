@@ -1,59 +1,145 @@
 """RSS / Atom source plugin.
 
-Inspired by ``Other/undercurrent`` but trimmed to a single
-:meth:`fetch`. The URL passed in is the feed URL itself; ``offset``
-selects which item from the feed.
+Fetches one item from any RSS or Atom feed. The URL passed in is
+the feed URL itself; ``offset`` selects which item from the feed.
+
+When ``offset`` is past the end of the first page, the plugin
+walks the standard Atom ``<link rel="next">`` chain to deeper
+pages until it finds the requested item. Capped at
+``RSS_PAGE_LIMIT`` pages (default 10) to keep a bad caller from
+dragging the plugin into hundreds of HTTP fetches; pass the URL
+with ``?page=N`` already set if you need to start deeper.
 
 Returns the standard SourcePlugin shape:
 
-  title, text, url, summary, offset
+  title, text, url, header, offset
 
-  summary  "[title] by [author] on [date]"
-  text     summary form when ``summary=True``;
-           full body (with ``<img>`` tags swapped for
-           "Image description: [alt text]") when ``False``.
+  header  "<title>. By: <author>. Published on: <date>"
+  text    the header line when ``part="header"``,
+          the article body (with ``<img>`` tags swapped for
+          "Image description: <alt>") when ``part="body"``.
 
-Body resolution order:
+Body resolution order when ``part="body"``:
 
   1. ``content:encoded`` on the feed item (most modern WordPress
      feeds carry the full body here).
   2. The ``description`` / ``summary`` element when long enough
      to plausibly be the full article.
-  3. Fetch the article URL itself and extract the main content.
+  3. Fetch the article URL and extract the main content. Some
+     publishers (Glacier Media, etc.) gate articles behind
+     Cloudflare; the fetch is best-effort and falls through to
+     whatever short body the feed item already had if it fails.
 
-If all three fail, the plugin returns whatever short body was on
-the feed item rather than empty text.
+Per-publisher article-body extractor rules live in
+``rss_extractors.yaml`` next to this module. Defaults cover most
+modern news CMSes via schema.org's ``itemprop="articleBody"`` and
+WordPress class patterns; per-domain entries override on hostname
+matches. Override the path with ``TALKSHOW_RSS_EXTRACTORS``.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
+from fnmatch import fnmatch
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 import feedparser
 import httpx
+import yaml
 from bs4 import BeautifulSoup
 
 from ..base import SourcePlugin
 
 
-_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-)
+_DEFAULT_PAGE_LIMIT = 10
 
-# Heuristic body selectors, tried in order. WordPress and
-# WordPress-shaped CMSes cover most of what cobd cares about; the
-# generic <article> / <main> tags catch the rest. If nothing
-# matches we fall back to the whole <body>.
-_BODY_SELECTORS = (
-    "article",
-    "main",
-    '[class*="entry-content"]',
-    '[class*="post-content"]',
-    '[class*="article-body"]',
-    '[class*="story-body"]',
+# Path to the bundled extractor config. Co-located with the plugin
+# so it's discoverable and ships with the wheel. Override at runtime
+# via the ``TALKSHOW_RSS_EXTRACTORS`` env var.
+_BUNDLED_EXTRACTORS_PATH = Path(__file__).parent / "rss_extractors.yaml"
+
+# Used when both the env file and the bundled file fail to load.
+# Keeps the plugin functional even with a misconfigured deployment.
+_HARDCODED_FALLBACK_DEFAULTS = {
+    "defaults": {
+        "body_selectors": [
+            '[itemprop="articleBody"]',
+            '[class*="entry-content"]',
+            '[class*="post-content"]',
+            '[class*="article-body"]',
+            '[class*="story-body"]',
+            "article",
+            "main",
+        ],
+        "strip": [],
+    },
+    "domains": [],
+}
+
+
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.0 Safari/605.1.15"
 )
+_BROWSER_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.5",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+def _load_extractors() -> dict[str, Any]:
+    """Read the active extractor config.
+
+    Lookup order:
+      1. ``TALKSHOW_RSS_EXTRACTORS`` env var, if set and readable.
+      2. ``rss_extractors.yaml`` shipped alongside this module.
+      3. ``_HARDCODED_FALLBACK_DEFAULTS`` so the plugin still works
+         if both files are missing or malformed.
+
+    Read on every fetch so an operator can edit the file and have
+    changes pick up without restarting talkshow. PyYAML safe_load
+    + a small amount of disk I/O is cheap relative to the HTTP
+    fetch + TTS synthesis that follows.
+    """
+    candidates: list[Path] = []
+    override = os.getenv("TALKSHOW_RSS_EXTRACTORS")
+    if override:
+        candidates.append(Path(override))
+    candidates.append(_BUNDLED_EXTRACTORS_PATH)
+
+    for path in candidates:
+        try:
+            with path.open("rb") as fh:
+                loaded = yaml.safe_load(fh)
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(loaded, dict):
+            return loaded
+    return _HARDCODED_FALLBACK_DEFAULTS
+
+
+def _match_extractor(url: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Pick the most specific extractor entry for ``url``.
+
+    Hostname-only matching via ``fnmatch``; first match wins so
+    ordering in the YAML file is significant. Falls back to
+    ``config["defaults"]`` (always present) when nothing matches.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    for entry in config.get("domains", []) or []:
+        for pattern in entry.get("match", []) or []:
+            if fnmatch(host, pattern.lower()):
+                return entry
+    return config.get("defaults") or _HARDCODED_FALLBACK_DEFAULTS["defaults"]
 
 
 def _format_date(raw: str) -> str:
@@ -98,14 +184,40 @@ def _html_to_text(html: str) -> str:
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 
-def _extract_main_content(html: str) -> str:
-    """Return the HTML of whichever main-content selector matches first."""
+def _extract_main_content(html: str, url: str) -> str:
+    """Pick the article body out of the page HTML using the
+    extractor config. The selected node is then run through the
+    extractor's ``strip`` list to remove in-body junk before
+    being returned as a string."""
     soup = BeautifulSoup(html or "", "html.parser")
-    for selector in _BODY_SELECTORS:
-        node = soup.select_one(selector)
-        if node:
-            return str(node)
-    return str(soup.body or soup)
+    extractor = _match_extractor(url, _load_extractors())
+
+    selectors = extractor.get("body_selectors") or []
+    matched = None
+    for selector in selectors:
+        matched = soup.select_one(selector)
+        if matched:
+            break
+    if matched is None:
+        matched = soup.body or soup
+
+    for strip_selector in extractor.get("strip") or []:
+        for victim in matched.select(strip_selector):
+            victim.decompose()
+
+    return str(matched)
+
+
+def _looks_like_cf_challenge(html: str) -> bool:
+    """Cloudflare's interstitial returns a small HTML page titled
+    'Just a moment...' with a script-tag challenge. Detect it so we
+    don't try to parse it as the article."""
+    if not html:
+        return False
+    return (
+        "Just a moment..." in html
+        and "challenges.cloudflare.com" in html
+    )
 
 
 class RSSSource(SourcePlugin):
@@ -117,18 +229,17 @@ class RSSSource(SourcePlugin):
         url: str,
         *,
         offset: int = 0,
-        summary: bool = False,
+        part: str = "body",
     ) -> dict:
-        feed_xml = await self._fetch_text(url)
-        feed = feedparser.parse(feed_xml)
-        entries = feed.entries
-        if not entries:
-            raise IndexError("feed has no items")
-        if offset < 0 or offset >= len(entries):
-            raise IndexError(
-                f"offset {offset} out of range (0..{len(entries) - 1})"
+        if part not in ("header", "body"):
+            raise ValueError(
+                f"part must be 'header' or 'body', got {part!r}"
             )
-        entry = entries[offset]
+        if offset < 0:
+            raise IndexError(f"offset must be >= 0, got {offset}")
+
+        page_limit = self._page_limit()
+        entry = await self._locate_entry(url, offset, page_limit)
 
         title = (entry.get("title") or "").strip()
         author = (
@@ -141,29 +252,117 @@ class RSSSource(SourcePlugin):
         )
         link = entry.get("link") or ""
 
-        summary_str = self._build_summary(title, author, published)
+        header = self._build_header(title, author, published)
 
-        if summary:
-            body_text = summary_str
+        if part == "header":
+            text = header
         else:
-            body_text = await self._resolve_body(entry, link)
+            text = await self._resolve_body(entry, link)
 
         return {
             "title": title,
-            "text": body_text,
+            "text": text,
             "url": link,
-            "summary": summary_str,
+            "header": header,
             "offset": offset,
         }
 
     @staticmethod
-    def _build_summary(title: str, author: str, published: str) -> str:
-        parts = [title] if title else []
+    def _page_limit() -> int:
+        """Per-fetch read of ``RSS_PAGE_LIMIT`` so tests can flip
+        it via monkeypatch.setenv without restarting the plugin.
+        Falls back to ``_DEFAULT_PAGE_LIMIT`` on missing or
+        non-integer values."""
+        raw = os.getenv("RSS_PAGE_LIMIT")
+        if not raw:
+            return _DEFAULT_PAGE_LIMIT
+        try:
+            value = int(raw)
+        except ValueError:
+            return _DEFAULT_PAGE_LIMIT
+        return value if value > 0 else _DEFAULT_PAGE_LIMIT
+
+    async def _locate_entry(
+        self, url: str, offset: int, page_limit: int,
+    ) -> dict:
+        """Walk the ``rel="next"`` chain until the requested
+        offset is found or the page limit / chain end is reached.
+
+        Caching note: the synthesised audio is keyed on the
+        article body, so two callers that reach the same article
+        through different starting URLs (eg. ``?page=2`` + offset 0
+        vs root URL + offset 20) still hit the same WAV file.
+        """
+        remaining = offset
+        current_url = url
+        pages_fetched = 0
+
+        while True:
+            feed_xml = await self._fetch_text(current_url)
+            pages_fetched += 1
+            feed = feedparser.parse(feed_xml)
+            entries = feed.entries
+
+            if not entries:
+                if pages_fetched == 1:
+                    raise IndexError("feed has no items")
+                # A "next" link led to an empty page — treat as end.
+                raise IndexError(
+                    f"offset {offset} out of range; pagination ended at "
+                    f"page {pages_fetched}"
+                )
+
+            if remaining < len(entries):
+                return entries[remaining]
+
+            remaining -= len(entries)
+
+            if pages_fetched >= page_limit:
+                raise IndexError(
+                    f"offset {offset} out of range within page limit "
+                    f"({page_limit}); pass ?page=N in the URL to start "
+                    f"deeper, or raise RSS_PAGE_LIMIT"
+                )
+
+            next_link = self._find_next_link(feed)
+            if not next_link:
+                raise IndexError(
+                    f"offset {offset} out of range; feed has no more "
+                    f"pages after page {pages_fetched}"
+                )
+            current_url = next_link
+
+    @staticmethod
+    def _find_next_link(feed) -> str | None:
+        """Return the channel-level ``<atom:link rel="next">`` href
+        if the feed exposes one, else None.
+
+        feedparser stores Atom links on ``feed.feed.links`` (the
+        channel-level metadata, not the per-entry list). RSS 2.0
+        feeds with embedded Atom pagination namespace work too —
+        feedparser normalises them onto the same attribute."""
+        feed_meta = getattr(feed, "feed", None) or {}
+        for link in feed_meta.get("links", []) or []:
+            if link.get("rel") == "next":
+                href = link.get("href")
+                if href:
+                    return href
+        return None
+
+    @staticmethod
+    def _build_header(title: str, author: str, published: str) -> str:
+        """Compose `"<title>. By: <author>. Published on: <date>"`,
+        skipping any segment that's empty so a feed without an author
+        doesn't leave a dangling `By: .`. The period-and-space joiner
+        gives TTS engines a natural sentence break."""
+        parts: list[str] = []
+        if title:
+            parts.append(title)
         if author:
-            parts.append(f"by {author}")
+            parts.append(f"By: {author}")
         if published:
-            parts.append(f"on {published}")
-        return " ".join(parts)
+            parts.append(f"Published on: {published}")
+        return ". ".join(parts)
 
     async def _resolve_body(self, entry, link: str) -> str:
         """Find the best body source and render to plain text."""
@@ -183,10 +382,10 @@ class RSSSource(SourcePlugin):
         if link:
             try:
                 html = await self._fetch_text(link)
-                return _html_to_text(_extract_main_content(html))
+                if not _looks_like_cf_challenge(html):
+                    return _html_to_text(_extract_main_content(html, link))
             except Exception:
-                # Network died — return whatever short body we had
-                # rather than emit nothing.
+                # Network died — fall through to the short body.
                 pass
 
         return _html_to_text(desc)
@@ -195,7 +394,7 @@ class RSSSource(SourcePlugin):
     async def _fetch_text(url: str) -> str:
         async with httpx.AsyncClient(
             timeout=30,
-            headers={"User-Agent": _USER_AGENT},
+            headers=_BROWSER_HEADERS,
         ) as client:
             resp = await client.get(url, follow_redirects=True)
             resp.raise_for_status()
