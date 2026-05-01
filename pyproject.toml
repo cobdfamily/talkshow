@@ -1,7 +1,7 @@
 [project]
 name = "talkshow"
-version = "0.6.0"
-description = "TTS microservice with a plugin architecture; one /speak endpoint covers SSML, plain text, and source-plugin fetches"
+version = "1.0.0"
+description = "TTS microservice with a plugin architecture; /speak synthesises, /queue warms the cache without blocking, /cache streams cached files by path"
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.12"

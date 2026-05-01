@@ -5,6 +5,94 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-01
+
+This is the first stable release. Below is what changed since
+0.6.0; see the per-feature commits for full detail.
+
+### Added
+
+- **`/v1/queue`** — non-blocking cache-warm endpoint. Same
+  arguments as `/v1/speak`. Returns
+  `{"ready": false}` immediately and triggers synthesis in
+  the background; subsequent polls return
+  `{"ready": true, "path": "..."}` once the cache file is
+  written. After three consecutive synthesis failures the
+  endpoint stops auto-retrying and surfaces
+  `{"ready": false, "attempts": 3, "error": "..."}` so the
+  caller knows to give up. Designed for IVR flows that play
+  hold audio while a long article is being prepared.
+- **`/v1/cache?path=<abs>`** — streams a previously-cached WAV
+  file by absolute path. Validates the path resolves inside
+  `TALKSHOW_CACHE_DIR` and ends in `.wav`. Path-traversal,
+  symlinks-out-of-cache, and partial `.wav.tmp` writes are
+  rejected with 403. Typical flow: poll `/queue` until
+  `ready: true`, take its `path`, hand it to `/cache`.
+- **RSS pagination.** The `rss` source plugin now follows the
+  standard Atom `<link rel="next">` chain when `offset` is
+  past the end of the first page. Capped by the new
+  `RSS_PAGE_LIMIT` env var (default 10 pages); pass
+  `?page=N` in the URL to start deeper.
+- **Per-publisher article-body extractors.** Selectors and
+  in-body strip lists now live in
+  `src/talkshow/plugins/sources/rss_extractors.yaml`. Hostname
+  globs (`fnmatch`) pick the matching entry; `defaults`
+  applies otherwise. Override path via
+  `TALKSHOW_RSS_EXTRACTORS=/path/to/your.yaml`.
+- **Source-plugin contract: `part="header"|"body"`.**
+  `summary: bool` is gone. `part="header"` returns
+  `"<title>. By: <author>. Published on: <date>"`;
+  `part="body"` returns the article body only. The header
+  string is also returned in the dict on every fetch so a
+  caller can prepend it to the body if they want a
+  title-card flow.
+- **TTS plugin contract: `resolve_cache_path`.** New abstract
+  method on `TTSPlugin` that returns the cache file path for
+  a given request without invoking synthesis. `/queue` uses
+  it to test "is this already on disk?" without spending
+  Azure quota.
+
+### Changed
+
+- **Atomic cache writes.** `AzureTTS.synthesize` now writes
+  audio to a `.wav.tmp` sibling and renames into place once
+  the bytes are flushed. Readers (including a separate trunk
+  process reading the cache volume) never see a half-written
+  file.
+- **SSML XML escaping.** Article text is now run through
+  `xml.sax.saxutils.escape` before being placed in the SSML
+  envelope. Fixes the "EntityName" parse errors that bare
+  ampersands in titles caused.
+- **Body selector reorder.** `[itemprop="articleBody"]`
+  (schema.org) tried first; `<article>` / `<main>` moved to
+  last-resort. Fixes Glacier Media articles getting nav and
+  footer text scraped along with the body.
+- **Header format separator** changed from ` - ` to `. `
+  (period + space). Reads better through TTS — Azure pauses
+  on the period.
+
+### New env vars
+
+- `RSS_PAGE_LIMIT` (default `10`) — pagination cap.
+- `TALKSHOW_RSS_EXTRACTORS` — override path to extractor
+  config.
+
+### Migration from 0.6.0
+
+Most changes are additive. Two breaking points:
+
+1. Source-plugin `fetch` signature is now
+   `fetch(url, *, offset=0, part="body")`. Callers using
+   `summary=True` should now pass `part="header"`. The
+   header format also changed:
+     before: `"Title by Author on Date"`
+     after:  `"Title. By: Author. Published on: Date"`
+2. Custom TTS plugins must implement `resolve_cache_path` —
+   the abstract method has no default. The bundled
+   `AzureTTS` is updated; out-of-tree plugins need a small
+   addition (forward to `self.cache_path(...)` with the
+   plugin's own defaults).
+
 ## [0.6.0] - 2026-04-28
 
 ### Changed (breaking)
@@ -153,7 +241,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cobdfamily/talkshow/compare/v0.4.0...v0.4.1
