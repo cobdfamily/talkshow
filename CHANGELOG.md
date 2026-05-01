@@ -5,6 +5,21 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-01
+
+### Fixed
+- RSS source plugin: when an item's ``content:encoded``
+  element holds only the lead-image caption (a couple
+  hundred characters of figure markup and a wire-service
+  photo credit) instead of the full body, the plugin now
+  falls through to the article-page fetch instead of
+  trusting the caption. The description path already had
+  a `> 500 chars` length gate; ``content:encoded`` now
+  has the same. Caught with Glacier Media's section-feed
+  page 2 onward, where The Bowen Island Undercurrent
+  feed populates ``content:encoded`` with the AP photo
+  credit but leaves the article body to the page itself.
+
 ## [1.0.0] - 2026-05-01
 
 This is the first stable release. Below is what changed since
@@ -241,7 +256,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/cobdfamily/talkshow/compare/v0.4.1...v0.5.0

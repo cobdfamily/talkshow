@@ -366,16 +366,25 @@ class RSSSource(SourcePlugin):
 
     async def _resolve_body(self, entry, link: str) -> str:
         """Find the best body source and render to plain text."""
-        # 1. content:encoded — the full article when the feed is generous.
         contents = entry.get("content") or []
+        content_html = ""
         if contents and isinstance(contents, list):
-            first_html = contents[0].get("value") or ""
-            if first_html:
-                return _html_to_text(first_html)
+            content_html = contents[0].get("value") or ""
 
-        # 2. description / summary — sometimes also a full body.
         desc = entry.get("description") or entry.get("summary") or ""
-        if desc and len(desc) > 500:
+
+        # 1. content:encoded if it's plausibly the full article body.
+        #    Glacier Media (and other publishers we've hit) sometimes
+        #    drop only the lead-image caption into content:encoded —
+        #    a couple hundred characters of figure markup and an
+        #    AP photo credit. The length gate catches that and forces
+        #    a fall-through to the article-page fetch, which returns
+        #    the real body.
+        if len(content_html) > 500:
+            return _html_to_text(content_html)
+
+        # 2. description / summary if long enough to be the full body.
+        if len(desc) > 500:
             return _html_to_text(desc)
 
         # 3. Fetch the article URL.
@@ -385,10 +394,13 @@ class RSSSource(SourcePlugin):
                 if not _looks_like_cf_challenge(html):
                     return _html_to_text(_extract_main_content(html, link))
             except Exception:
-                # Network died — fall through to the short body.
+                # Network died — fall through to whichever short
+                # feed body we have.
                 pass
 
-        return _html_to_text(desc)
+        # 4. Last resort: whichever short body is longer.
+        fallback = content_html if len(content_html) > len(desc) else desc
+        return _html_to_text(fallback)
 
     @staticmethod
     async def _fetch_text(url: str) -> str:

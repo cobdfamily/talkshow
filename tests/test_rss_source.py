@@ -36,6 +36,15 @@ RSS_WITH_FULL_CONTENT = """\
         <p>The full article body lives here.</p>
         <img src="https://x/y.jpg" alt="A diagram of the new bridge" />
         <p>More body text after the image.</p>
+        <p>The reporters were on the scene shortly after sunrise. The
+        bridge had been under construction for the better part of a
+        year, and its opening was meant to coincide with the start of
+        the new fiscal quarter. Residents had mixed feelings: some
+        welcomed the convenience, others worried about traffic noise.
+        Council members declined to comment on the cost overruns,
+        which by some estimates exceeded the original budget by
+        nearly forty percent. The mayor, reached by phone, said the
+        project was a victory for transit-oriented development.</p>
       ]]></content:encoded>
     </item>
     <item>
@@ -162,6 +171,46 @@ async def test_fetch_falls_through_to_article_url(patch_httpx):
     # appear.
     assert "nav and stuff" not in body
     assert "copyright" not in body
+
+
+@pytest.mark.asyncio
+async def test_short_content_encoded_falls_through_to_article_url(patch_httpx):
+    """Some publishers (Glacier Media seen in the wild) put only the
+    lead-image caption — a couple hundred characters — into
+    content:encoded. The plugin must NOT trust that as the article
+    body; it must fall through to the article-page fetch."""
+    feed_xml = (
+        '<?xml version="1.0"?>'
+        '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">'
+        '<channel><item>'
+        '<title>Caption-only feed item</title>'
+        '<link>https://news.example/caption-only</link>'
+        '<description>Short teaser.</description>'
+        '<content:encoded><![CDATA['
+        '<p>FILE - A photo caption from the wire service. AP Photo, File.</p>'
+        ']]></content:encoded>'
+        '</item></channel></rss>'
+    )
+    article_html = (
+        '<!doctype html><html><body>'
+        '<article>'
+        '<p>Paragraph one of the real article body fetched from the page.</p>'
+        '<p>Paragraph two with much more substance than the photo caption.</p>'
+        '</article>'
+        '</body></html>'
+    )
+    patch_httpx["https://feed.example/rss"] = feed_xml
+    patch_httpx["https://news.example/caption-only"] = article_html
+
+    article = await RSSSource().fetch(
+        "https://feed.example/rss", offset=0, part="body",
+    )
+    body = article["text"]
+    assert "real article body fetched from the page" in body
+    assert "much more substance" in body
+    # The photo caption MUST NOT be the returned body.
+    assert "FILE" not in body
+    assert "AP Photo" not in body
 
 
 @pytest.mark.asyncio
