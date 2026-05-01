@@ -43,9 +43,31 @@ class TTSPlugin(ABC):
         prosody arguments.
 
         Implementations should:
-          1. Check cache via ``cache_path()`` — if the file exists,
-             stream it.
+          1. Check cache via ``resolve_cache_path()`` — if the file
+             exists, stream it.
           2. Otherwise, synthesize, write the file, and stream.
+        """
+        ...
+
+    @abstractmethod
+    def resolve_cache_path(
+        self,
+        text: str,
+        *,
+        ssml: str | None = None,
+        voice: str | None = None,
+        language: str | None = None,
+        rate: str | None = None,
+        pitch: str | None = None,
+    ) -> Path:
+        """Return the cache file path for a synthesis request.
+
+        Plugins apply their own defaults (engine-specific env vars,
+        fallback voice/language) here so the path is identical to
+        the one ``synthesize()`` would use for the same arguments.
+
+        Used by the ``/queue`` endpoint to test whether a request's
+        audio is already cached without actually invoking synthesis.
         """
         ...
 

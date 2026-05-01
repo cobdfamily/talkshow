@@ -10,6 +10,7 @@ import asyncio
 import os
 from pathlib import Path
 from typing import AsyncIterator
+from xml.sax.saxutils import escape as xml_escape
 
 import azure.cognitiveservices.speech as speechsdk
 
@@ -26,14 +27,55 @@ class AzureTTS(TTSPlugin):
     def _build_ssml(
         self, text: str, voice: str, language: str, rate: str, pitch: str
     ) -> str:
+        # `text` originated from RSS / WP / user input and may contain
+        # bare ``&``, ``<``, ``>`` characters that would otherwise
+        # break SSML parsing on the Azure side. Escape them.
+        # Voice / language / rate / pitch come from validated config or
+        # query strings and are not user prose; they don't need
+        # escaping here.
         return (
             '<speak version="1.0"'
             f' xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="{language}">'
             f'<voice name="{voice}">'
             f'<prosody rate="{rate}" pitch="{pitch}">'
-            f"{text}"
+            f"{xml_escape(text)}"
             "</prosody></voice></speak>"
         )
+
+    def _resolve_defaults(
+        self,
+        voice: str | None,
+        language: str | None,
+        rate: str | None,
+        pitch: str | None,
+    ) -> tuple[str, str, str, str]:
+        return (
+            voice or self._get_default("voice", "en-US-EmmaMultilingualNeural"),
+            language or self._get_default("language", "en-US"),
+            rate or self._get_default("rate", "0%"),
+            pitch or self._get_default("pitch", "0%"),
+        )
+
+    def resolve_cache_path(
+        self,
+        text: str,
+        *,
+        ssml: str | None = None,
+        voice: str | None = None,
+        language: str | None = None,
+        rate: str | None = None,
+        pitch: str | None = None,
+    ) -> Path:
+        voice, language, rate, pitch = self._resolve_defaults(
+            voice, language, rate, pitch,
+        )
+        # When SSML is supplied verbatim, the cache key is the SSML
+        # itself plus the voice/language for layout purposes only —
+        # rate and pitch are baked into the SSML so we use placeholder
+        # cache-key values.
+        if ssml:
+            return self.cache_path(ssml, language, voice, "ssml", "ssml")
+        return self.cache_path(text, language, voice, rate, pitch)
 
     async def synthesize(
         self,
@@ -45,19 +87,13 @@ class AzureTTS(TTSPlugin):
         rate: str | None = None,
         pitch: str | None = None,
     ) -> AsyncIterator[bytes]:
-        voice = voice or self._get_default("voice", "en-US-EmmaMultilingualNeural")
-        language = language or self._get_default("language", "en-US")
-        rate = rate or self._get_default("rate", "0%")
-        pitch = pitch or self._get_default("pitch", "0%")
-
-        # When SSML is supplied verbatim, the cache key is the SSML
-        # itself plus the voice/language for layout purposes only —
-        # rate and pitch are baked into the SSML so we use placeholder
-        # cache-key values.
-        if ssml:
-            cached = self.cache_path(ssml, language, voice, "ssml", "ssml")
-        else:
-            cached = self.cache_path(text, language, voice, rate, pitch)
+        voice, language, rate, pitch = self._resolve_defaults(
+            voice, language, rate, pitch,
+        )
+        cached = self.resolve_cache_path(
+            text, ssml=ssml, voice=voice, language=language,
+            rate=rate, pitch=pitch,
+        )
 
         if cached.exists():
             async for chunk in self._stream_file(cached):
@@ -69,7 +105,15 @@ class AzureTTS(TTSPlugin):
         final_ssml = ssml if ssml else self._build_ssml(text, voice, language, rate, pitch)
         audio_data = await self._synthesize_to_bytes(final_ssml, voice)
 
-        cached.write_bytes(audio_data)
+        # Atomic write: a reader checking ``cached.exists()`` (eg.
+        # /queue, or trunk reading the file directly) must either
+        # see the file absent or see it complete — never half-written.
+        # Path.write_bytes opens the destination immediately, so we'd
+        # otherwise race during the write. Write to a sibling .tmp
+        # and rename: POSIX rename is atomic on the same filesystem.
+        tmp_path = cached.with_suffix(cached.suffix + ".tmp")
+        tmp_path.write_bytes(audio_data)
+        tmp_path.replace(cached)
 
         chunk_size = 8192
         for i in range(0, len(audio_data), chunk_size):

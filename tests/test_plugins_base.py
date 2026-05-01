@@ -13,8 +13,19 @@ class StubTTS(TTSPlugin):
     name = "stub"
     description = "test stub"
 
-    async def synthesize(self, text, *, voice=None, language=None, rate=None, pitch=None):
+    async def synthesize(self, text, *, ssml=None, voice=None, language=None, rate=None, pitch=None):
         yield b"audio"
+
+    def resolve_cache_path(
+        self, text, *, ssml=None, voice=None, language=None, rate=None, pitch=None,
+    ):
+        return self.cache_path(
+            ssml or text,
+            language or "en-US",
+            voice or "TestVoice",
+            rate or "0%",
+            pitch or "0%",
+        )
 
 
 class StubSource(SourcePlugin):

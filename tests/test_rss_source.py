@@ -470,6 +470,14 @@ def test_rss_plugin_drives_speak_endpoint(monkeypatch):
             captured["ssml"] = ssml
             yield b"RIFF" + b"\x00" * 100
 
+        def resolve_cache_path(
+            self, text, *, ssml=None, voice=None, language=None, rate=None, pitch=None,
+        ):
+            return self.cache_path(
+                ssml or text, language or "en-US", voice or "V",
+                rate or "0%", pitch or "0%",
+            )
+
     # Register a fresh set of plugins.
     loader._tts_plugins.clear()
     loader._source_plugins.clear()
