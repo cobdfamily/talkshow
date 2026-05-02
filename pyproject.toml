@@ -1,6 +1,6 @@
 [project]
 name = "talkshow"
-version = "1.0.2"
+version = "1.0.3"
 description = "TTS microservice with a plugin architecture; /speak synthesises, /queue warms the cache without blocking, /cache streams cached files by path"
 readme = "README.md"
 license = "AGPL-3.0"

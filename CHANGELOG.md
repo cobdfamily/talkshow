@@ -5,6 +5,18 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-02
+
+### Fixed
+- Health endpoint at ``/`` no longer includes a ``"docs"``
+  key in its JSON body. Aligns with the cobdfamily
+  microservice convention: liveness returns just
+  ``{"service": "...", "status": "ok"}``.
+- ReDoc moved from FastAPI's default ``/redoc`` to
+  ``/redocs`` (trailing s) to match the convention used
+  across other cobdfamily services. Swagger stays at the
+  default ``/docs``.
+
 ## [1.0.2] - 2026-05-01
 
 ### Added
@@ -268,7 +280,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/cobdfamily/talkshow/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/cobdfamily/talkshow/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...v1.0.0
