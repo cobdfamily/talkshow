@@ -5,6 +5,18 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-01
+
+### Added
+- ``/v1/queue`` learns a ``peek=true`` flag. With it, a cold
+  cache returns ``{"ready": false}`` without starting a
+  background synthesis task. Out-of-range offsets still 400 as
+  before, so the flag doubles as a cheap "does this article
+  exist?" probe. Used by trunk's article auto-advance flow:
+  pressing 6 (next) or having the header time out can validate
+  the next offset without burning Azure quota the listener may
+  never hear.
+
 ## [1.0.1] - 2026-05-01
 
 ### Fixed
@@ -256,7 +268,8 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/cobdfamily/talkshow/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/cobdfamily/talkshow/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/cobdfamily/talkshow/compare/v0.5.0...v0.6.0

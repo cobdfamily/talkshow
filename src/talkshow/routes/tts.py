@@ -438,7 +438,19 @@ async def _do_queue(
     pitch: str | None,
     engine_name: str,
     source_name: str,
+    peek: bool = False,
 ) -> dict:
+    """Resolve a request and tell the caller whether the audio is
+    cached. With ``peek=True`` no synthesis is started — the call
+    only reports cache status. Without it the standard
+    fire-and-forget background synthesis runs on a cold cache.
+
+    The 400 / 404 paths still apply when the source plugin can't
+    resolve the offset (out of range, feed unreachable). That makes
+    ``peek=True`` useful as an "offset exists?" probe — the caller
+    sees a 400 IndexError when the offset is past the end of the
+    feed and ``ready: false`` otherwise.
+    """
     final_text, final_ssml = await _resolve_text(
         ssml=ssml,
         text=text,
@@ -476,6 +488,13 @@ async def _do_queue(
         async with _INFLIGHT_LOCK:
             _FAILED.pop(cache_path, None)
         return {"ready": True, "path": str(cache_path.resolve())}
+
+    # Peek mode: caller wants the cache verdict but does NOT want a
+    # synthesis task spawned. Used by trunk for "is offset N+1 a
+    # valid story?" probes where firing synthesis would burn quota
+    # the listener may never use.
+    if peek:
+        return {"ready": False}
 
     # Cold cache. Surface any prior failures and decide whether to
     # retry. Past MAX_QUEUE_ATTEMPTS we stop spawning new tasks; the
@@ -551,6 +570,16 @@ async def queue_get(
     pitch: str | None = Query(None, description="Speech pitch"),
     engine: str | None = Query(None, description="TTS engine plugin name"),
     source: str | None = Query(None, description="Source plugin name"),
+    peek: bool = Query(
+        False,
+        description=(
+            "Inspector mode. Returns `ready` based on cache state but "
+            "does NOT spawn synthesis on a cold cache. The 400 path "
+            "for out-of-range offsets stays the same, so this is the "
+            "right way to probe whether a feed offset exists without "
+            "burning quota."
+        ),
+    ),
 ):
     return await _do_queue(
         ssml=ssml,
@@ -564,6 +593,7 @@ async def queue_get(
         pitch=pitch,
         engine_name=engine or "azure",
         source_name=source or "wordpress",
+        peek=peek,
     )
 
 
@@ -587,6 +617,10 @@ async def queue_post(
     pitch: str | None = Query(None, description="Speech pitch"),
     engine: str | None = Query(None, description="TTS engine plugin name"),
     source: str | None = Query(None, description="Source plugin name"),
+    peek: bool = Query(
+        False,
+        description="Inspector mode: report cache state without spawning synthesis.",
+    ),
     body: SpeakBody | None = None,
 ):
     final_ssml = ssml or (body.ssml if body else None)
@@ -613,4 +647,5 @@ async def queue_post(
         pitch=final_pitch,
         engine_name=engine_name,
         source_name=source_name,
+        peek=peek,
     )

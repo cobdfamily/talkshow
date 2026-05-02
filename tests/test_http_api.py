@@ -366,6 +366,49 @@ class TestQueue:
         r = client.get("/v1/queue", params={"text": "hi", "engine": "nope"})
         assert r.status_code == 404
 
+    def test_queue_peek_does_not_spawn_synthesis(
+        self, client, fake_tts, tmp_path,
+    ):
+        """`peek=true` returns ready=false on a cold cache without
+        kicking off a background synthesis task. Used by trunk to
+        probe "does this offset exist?" without burning quota."""
+        from talkshow.routes import tts as tts_route
+
+        fake_tts._cache_path_override = tmp_path / "peeked.wav"
+        # Make sure the path doesn't exist on disk.
+        assert not fake_tts._cache_path_override.exists()
+
+        # Snapshot in-flight set BEFORE the call.
+        before = set(tts_route._INFLIGHT)
+        r = client.get(
+            "/v1/queue",
+            params={"text": "hi", "engine": "fake", "peek": "true"},
+        )
+        assert r.status_code == 200
+        assert r.json() == {"ready": False}
+        # No background synthesis should have been started: the
+        # in-flight set is unchanged AND the fake's cache path is
+        # still missing on disk.
+        assert set(tts_route._INFLIGHT) == before
+        assert not fake_tts._cache_path_override.exists()
+
+    def test_queue_peek_returns_path_when_cached(
+        self, client, fake_tts, tmp_path, monkeypatch,
+    ):
+        monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
+        warm = tmp_path / "warm.wav"
+        warm.write_bytes(b"RIFF" + b"\x00" * 100)
+        fake_tts._cache_path_override = warm
+
+        r = client.get(
+            "/v1/queue",
+            params={"text": "hi", "engine": "fake", "peek": "true"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ready"] is True
+        assert body["path"] == str(warm.resolve())
+
 
 # ===========================================================================
 # /cache — stream a previously cached file by absolute path
