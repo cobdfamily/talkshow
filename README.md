@@ -20,7 +20,7 @@ uv sync
 uv run talkshow
 ```
 
-Auto-generated docs at `/docs` and `/redoc`.
+Auto-generated docs at `/docs` and `/redocs`.
 
 ## Plugins
 
