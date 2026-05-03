@@ -27,14 +27,14 @@ container image to the kibble registry on every
 secrets are required.
 
 ```sh
-git tag -a v0.4.1 -m "Release 0.4.1"
-git push origin v0.4.1
+git tag -a v1.0.5 -m "Release 1.0.5"
+git push origin v1.0.5
 ```
 
 Within a couple of minutes the workflow lands two image
 tags at:
 
-- `kibble.apps.blindhub.ca/cobdfamily/talkshow:0.4.1`
+- `kibble.apps.blindhub.ca/cobdfamily/talkshow:1.0.5`
 - `kibble.apps.blindhub.ca/cobdfamily/talkshow:latest`
 
 ## Configure
@@ -66,7 +66,7 @@ Production-shaped `docker-compose.yml`:
 ```yaml
 services:
   talkshow:
-    image: kibble.apps.blindhub.ca/cobdfamily/talkshow:0.4.0
+    image: kibble.apps.blindhub.ca/cobdfamily/talkshow:1.0.5
     container_name: talkshow
     restart: unless-stopped
     ports:
@@ -98,8 +98,13 @@ Behind your TLS reverse proxy, route
 ## Verify
 
 ```sh
-# Liveness
+# Liveness — returns the running version too:
+# {"service":"talkshow","status":"ok","version":"1.0.5"}
 curl -fsS https://talkshow.cobd.ca/
+
+# Generated OpenAPI docs:
+#   https://talkshow.cobd.ca/docs    (Swagger UI)
+#   https://talkshow.cobd.ca/redocs  (ReDoc, trailing s)
 
 # Plugin discovery
 curl -fsS https://talkshow.cobd.ca/v1/plugins | jq
@@ -109,6 +114,18 @@ curl -fsS \
   "https://talkshow.cobd.ca/v1/speak?text=hello+world" \
   > /tmp/talkshow-test.wav
 file /tmp/talkshow-test.wav    # should report RIFF WAV
+
+# Cache-warm a feed item without waiting for synthesis.
+# /v1/queue returns {ready, path?, attempts?, error?}.
+curl -fsS -X POST \
+  "https://talkshow.cobd.ca/v1/queue?source=rss&url=https://example/rss&offset=0&part=body&peek=true"
+
+# Serve a cached audio file by its cache path. The path
+# must stay inside the configured cache root (no traversal
+# escapes); served as audio/wav.
+curl -fsS \
+  "https://talkshow.cobd.ca/v1/cache?path=en-US/EmmaMultilingualNeural/<sha>.wav" \
+  > /tmp/cached.wav
 ```
 
 ## Routine operations
@@ -117,12 +134,12 @@ file /tmp/talkshow-test.wav    # should report RIFF WAV
 
 ```sh
 # On the dev host -- cut and push the tag.
-git tag -a v0.4.1 -m "Release 0.4.1"
-git push origin v0.4.1
+git tag -a v1.0.6 -m "Release 1.0.6"
+git push origin v1.0.6
 # CI builds and pushes the image.
 
 # On the deploy host -- pin the new tag and restart.
-sed -i 's|talkshow:[^ ]*|talkshow:0.4.1|' docker-compose.yml
+sed -i 's|talkshow:[^ ]*|talkshow:1.0.6|' docker-compose.yml
 docker compose pull
 docker compose up -d --no-deps talkshow
 ```
