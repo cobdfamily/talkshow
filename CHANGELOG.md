@@ -5,6 +5,15 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-05-02
+
+### Added
+- Health endpoint at ``/`` now returns ``"version"`` so
+  operators can confirm which build is running without
+  hitting ``/docs``. The value is sourced from ``app.version``
+  (the FastAPI constructor's ``version=...``), keeping it in
+  lockstep with the package's own version.
+
 ## [1.0.3] - 2026-05-02
 
 ### Fixed

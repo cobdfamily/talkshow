@@ -520,4 +520,10 @@ class TestHealth:
     def test_root_health(self, client):
         r = client.get("/")
         assert r.status_code == 200
-        assert r.json()["service"] == "talkshow"
+        body = r.json()
+        assert body["service"] == "talkshow"
+        assert body["status"] == "ok"
+        # Version comes straight from app.version, which is set on the
+        # FastAPI() constructor.
+        assert body["version"]
+        assert body["version"][0].isdigit()

@@ -28,7 +28,7 @@ app = FastAPI(
         "fetched via a source plugin (eg. WordPress). Plugin "
         "architecture for TTS engines and data sources."
     ),
-    version="1.0.3",
+    version="1.0.4",
     lifespan=lifespan,
     redoc_url="/redocs",
 )
@@ -45,7 +45,7 @@ app.include_router(v1)
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {"service": "talkshow", "status": "ok"}
+    return {"service": "talkshow", "status": "ok", "version": app.version}
 
 
 def run() -> None:
