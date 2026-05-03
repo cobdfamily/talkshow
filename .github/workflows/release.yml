@@ -40,6 +40,11 @@ jobs:
           ref="${{ inputs.tag || github.ref_name }}"
           echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
 
+      - name: set up qemu (for arm64 cross-emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
       - name: set up buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -53,7 +58,14 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64
+          # Multi-arch: amd64 for the production deploy host,
+          # arm64 for apple-silicon dev boxes. Cross-build runs
+          # on amd64 GitHub runners via the QEMU step above; the
+          # build is a couple of minutes slower than single-arch
+          # was, but the manifest list means dev hosts no longer
+          # need ``platform: linux/amd64`` pins in their compose
+          # files.
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
