@@ -2,11 +2,23 @@
 
 [![test](https://github.com/cobdfamily/talkshow/actions/workflows/test.yml/badge.svg)](https://github.com/cobdfamily/talkshow/actions/workflows/test.yml)
 
-FastAPI TTS microservice. One endpoint — `/v1/speak` —
-synthesises audio from raw SSML, plain text, or content fetched
-via a source plugin. Caches rendered audio on disk. See
-[`PROJECT.md`](PROJECT.md) for the architecture and the full
-argument list.
+FastAPI TTS microservice. Synthesises audio from raw SSML,
+plain text, or content fetched via a source plugin. Caches
+rendered audio on disk. See [`PROJECT.md`](PROJECT.md) for the
+architecture and the full argument list.
+
+| Endpoint                     | What it does                              |
+|------------------------------|-------------------------------------------|
+| `POST /v1/speak`             | Synthesise audio. Returns the WAV stream  |
+|                              | or a JSON `path` if `peek=true`.          |
+| `POST /v1/queue`             | Cache-warm: validate an offset / spawn    |
+|                              | background synthesis without streaming    |
+|                              | the body. Powers trunk's article flow.    |
+| `GET  /v1/cache?path=...`    | Serve a cached audio file by its cache    |
+|                              | path. Path-traversal-safe.                |
+| `GET  /v1/plugins`           | List discovered TTS + source plugins.     |
+| `GET  /`                     | Liveness; returns service / status /      |
+|                              | version.                                  |
 
 > Deploying talkshow in production? See
 > **[DEPLOYMENT.md](DEPLOYMENT.md)** for the full checklist (image
