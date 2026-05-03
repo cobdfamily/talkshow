@@ -28,7 +28,7 @@ app = FastAPI(
         "fetched via a source plugin (eg. WordPress). Plugin "
         "architecture for TTS engines and data sources."
     ),
-    version="1.0.4",
+    version="1.0.5",
     lifespan=lifespan,
     redoc_url="/redocs",
 )

@@ -5,6 +5,17 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-05-03
+
+### Changed
+- ``tool.coverage.report.fail_under`` raised from 85 to 88
+  to reflect the real floor. Branch coverage has held at
+  ~89% since v1.0.4; the 1-point buffer below that absorbs
+  short-term drift. The largest remaining gap is
+  ``config.py`` (a pydantic-settings module the unit tests
+  don't import directly) and a handful of branch nits in
+  the RSS source-plugin and the TTS routes.
+
 ## [1.0.4] - 2026-05-02
 
 ### Added
@@ -289,7 +300,9 @@ architecture (TTS engines, sources, output formatters),
 file-based audio caching, Microsoft Azure TTS, WordPress
 source, and Twilio TwiML / SignalWire LAML output.
 
-[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/cobdfamily/talkshow/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/cobdfamily/talkshow/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/cobdfamily/talkshow/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/cobdfamily/talkshow/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/cobdfamily/talkshow/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/cobdfamily/talkshow/compare/v1.0.0...v1.0.1
