@@ -1,0 +1,66 @@
+{
+	"top_stories": {
+		"name": "Top Stories",
+		"url": "https://bowenislandundercurrent.com/rss"
+	},
+	"local_news": {
+		"name": "Local News",
+		"url": "https://bowenislandundercurrent.com/rss/local-news"
+	},
+	"in_the_community": {
+		"name": "In the Community",
+		"url": "https://bowenislandundercurrent.com/rss/in-the-community"
+	},
+	"bc_news": {
+		"name": "BC News",
+		"url": "https://bowenislandundercurrent.com/rss/bc-news"
+	},
+	"national_news": {
+		"name": "National News",
+		"url": "https://bowenislandundercurrent.com/rss/national-news"
+	},
+	"world_news": {
+		"name": "World News",
+		"url": "https://bowenislandundercurrent.com/rss/world-news"
+	},
+	"local_business": {
+		"name": "Local Business",
+		"url": "https://bowenislandundercurrent.com/rss/local-business"
+	},
+	"national_business": {
+		"name": "National Business",
+		"url": "https://bowenislandundercurrent.com/rss/national-business"
+	},
+	"local_sports": {
+		"name": "Local Sports",
+		"url": "https://bowenislandundercurrent.com/rss/local-sports"
+	},
+	"national_sports": {
+		"name": "National Sports",
+		"url": "https://bowenislandundercurrent.com/rss/national-sports"
+	},
+	"cannabis_news": {
+		"name": "Cannabis News",
+		"url": "https://bowenislandundercurrent.com/rss/cannabis-news"
+	},
+	"opinion": {
+		"name": "The \"Opinion\" Section",
+		"url": "https://bowenislandundercurrent.com/rss/opinion"
+	},
+	"local_arts": {
+		"name": "Local Arts",
+		"url": "https://bowenislandundercurrent.com/rss/local-arts"
+	},
+	"living": {
+		"name": "The \"Living\" Section",
+		"url": "https://bowenislandundercurrent.com/rss/living"
+	},
+	"the_mix": {
+		"name": "\"The Mix\"",
+		"url": "https://bowenislandundercurrent.com/rss/the-mix"
+	},
+	"celebrity_news": {
+		"name": "Celebrity News",
+		"url": "https://bowenislandundercurrent.com/rss/celebrity-news"
+	}
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@cobd/undercurrent",
+  "version": "1.0.3",
+  "description": "A package for retrieving news from bowenislandundercurrent.com with the goal of making the Bowen Island Undercurrent newspaper's articles available to those with a perceptual print disability.",
+  "main": "bin/server.js",
+"bin": {
+"undercurrent-server": "./bin/server.js"
+},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cobd",
+    "newspaper",
+    "disability"
+  ],
+  "author": "COBD",
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "@cobd/spider": "^0.0.6",
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^4.18.2"
+  }
+}
