@@ -38,12 +38,22 @@ Auto-generated docs at `/docs` and `/redocs`.
 
 Two extension points under `src/talkshow/plugins/`:
 
-- `tts/` — synthesis engines (default: `azure`)
-- `sources/` — content fetchers (default: `wordpress`)
+- `tts/` — synthesis engines:
+  - `azure` (**default**) — Microsoft Azure neural voices;
+    needs `MSTTS_SUBSCRIPTION_KEY`.
+  - `espeak` — offline, no-credentials fallback via the
+    `espeak-ng` CLI (v1.1.0). Pick it with `?engine=espeak`;
+    for air-gapped dev / CI or when no Azure key is set.
+- `sources/` — content fetchers (default: `wordpress`; also `rss`)
 
 Each plugin subclasses the ABC in `src/talkshow/plugins/base.py`
 and is auto-discovered at startup by
 `src/talkshow/plugins/loader.py`.
+
+Every response carries `X-Request-Id` (echoed from the caller —
+trunk forwards it — or freshly minted) plus `X-Service` /
+`X-Service-Version`, so one call is greppable across the trunk →
+talkshow hop (v1.0.6).
 
 ## Test
 
