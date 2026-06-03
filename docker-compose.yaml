@@ -1,0 +1,67 @@
+# Local-dev / production-shape compose for talkshow.
+#
+# talkshow had no compose of its own -- it was only ever
+# brought up inside the trunk-teams-* e2e stacks. This
+# file gives it parity with the rest of the fleet
+# (build context like trunk's dev compose) and applies
+# the same container hardening (read-only root, dropped
+# caps, no-new-privileges) the roadmap S3 rolls out
+# fleet-wide.
+#
+# Usage:
+#   cp .env.example .env   # set MSTTS_SUBSCRIPTION_KEY
+#   docker compose up
+#
+# Reachable services:
+#   talkshow   http://localhost:8000
+
+services:
+
+  talkshow:
+    build:
+      context: .
+    container_name: talkshow
+    ports:
+      - "${TALKSHOW_HTTP_PORT:-8000}:8000"
+    environment:
+      MSTTS_SUBSCRIPTION_KEY: ${MSTTS_SUBSCRIPTION_KEY:-}
+      MSTTS_REGION: ${MSTTS_REGION:-eastus}
+      MSTTS_DEFAULT_VOICE: ${MSTTS_DEFAULT_VOICE:-en-US-EmmaMultilingualNeural}
+      MSTTS_DEFAULT_LANGUAGE: ${MSTTS_DEFAULT_LANGUAGE:-en-US}
+      MSTTS_DEFAULT_RATE: ${MSTTS_DEFAULT_RATE:-0%}
+      MSTTS_DEFAULT_PITCH: ${MSTTS_DEFAULT_PITCH:-0%}
+      # Point the audio cache at the writable named
+      # volume below (the image's default is the relative
+      # `cache` -> /app/cache, which the read-only root
+      # would make unwritable without this mount).
+      TALKSHOW_CACHE_DIR: /app/cache
+    volumes:
+      # Rendered-audio cache. Persistent so repeated
+      # synthesis of the same text/SSML is served from
+      # disk instead of re-hitting Azure.
+      - talkshow-cache:/app/cache
+    # Hardening: drop all caps, forbid privilege
+    # escalation, run the root filesystem read-only. The
+    # writable paths talkshow needs are the cache volume
+    # and /tmp; everything else is immutable.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/', timeout=2).status==200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  talkshow-cache:
