@@ -17,6 +17,7 @@ from talkshow.plugins.base import SourcePlugin, TTSPlugin
 
 # --- Stub plugins for HTTP tests ---
 
+
 class FakeTTS(TTSPlugin):
     name = "fake"
     description = "Fake TTS for testing"
@@ -28,8 +29,14 @@ class FakeTTS(TTSPlugin):
         self._cache_path_override = None
 
     async def synthesize(
-        self, text, *,
-        ssml=None, voice=None, language=None, rate=None, pitch=None,
+        self,
+        text,
+        *,
+        ssml=None,
+        voice=None,
+        language=None,
+        rate=None,
+        pitch=None,
     ):
         self.last_call = {
             "text": text,
@@ -52,7 +59,14 @@ class FakeTTS(TTSPlugin):
         yield b"RIFF" + b"\x00" * 100  # fake WAV header
 
     def resolve_cache_path(
-        self, text, *, ssml=None, voice=None, language=None, rate=None, pitch=None,
+        self,
+        text,
+        *,
+        ssml=None,
+        voice=None,
+        language=None,
+        rate=None,
+        pitch=None,
     ):
         if self._cache_path_override is not None:
             return self._cache_path_override
@@ -111,7 +125,40 @@ def setup_fake_plugins(fake_tts, fake_source):
 @pytest.fixture
 def client():
     from talkshow.main import app
+
     return TestClient(app, raise_server_exceptions=False)
+
+
+# ===========================================================================
+# End-to-end tracing (v1.0.6)
+# ===========================================================================
+
+
+def test_echoes_caller_request_id(client):
+    """trunk forwards X-Request-Id on the trunk -> talkshow
+    hop; talkshow must echo the SAME id back so a single call
+    correlates across both services' logs."""
+    r = client.get("/", headers={"X-Request-Id": "abc123"})
+    assert r.status_code == 200
+    assert r.headers["X-Request-Id"] == "abc123"
+
+
+def test_mints_request_id_when_absent(client):
+    """Direct callers (no upstream id) get a freshly minted
+    one so every response is traceable."""
+    r = client.get("/")
+    rid = r.headers.get("X-Request-Id")
+    assert rid and len(rid) >= 8
+
+
+def test_emits_fleet_service_headers(client):
+    """X-Service / X-Service-Version match the fleet pattern
+    (trunk, dispatch, brian)."""
+    r = client.get("/")
+    assert r.headers["X-Service"] == "talkshow"
+    from talkshow.main import __version__
+
+    assert r.headers["X-Service-Version"] == __version__
 
 
 # ===========================================================================
@@ -277,7 +324,11 @@ class TestQueue:
         assert "path" not in body  # only sent when ready
 
     def test_queue_warm_returns_ready_true_with_path(
-        self, client, fake_tts, tmp_path, monkeypatch,
+        self,
+        client,
+        fake_tts,
+        tmp_path,
+        monkeypatch,
     ):
         # The /speak path-parameter validation requires the file to
         # be inside TALKSHOW_CACHE_DIR; /queue's response uses the
@@ -306,7 +357,10 @@ class TestQueue:
         assert "ready" in r.json()
 
     def test_queue_reports_attempts_and_error_after_failure(
-        self, client, fake_tts, tmp_path,
+        self,
+        client,
+        fake_tts,
+        tmp_path,
     ):
         """When background synthesis fails, /queue must surface
         attempts + error on the next poll."""
@@ -321,7 +375,8 @@ class TestQueue:
 
         try:
             r = client.get(
-                "/v1/queue", params={"text": "hi", "engine": "fake"},
+                "/v1/queue",
+                params={"text": "hi", "engine": "fake"},
             )
             assert r.status_code == 200
             body = r.json()
@@ -334,7 +389,10 @@ class TestQueue:
             tts_route._FAILED.pop(fake_tts._cache_path_override, None)
 
     def test_queue_stops_retrying_after_max_attempts(
-        self, client, fake_tts, tmp_path,
+        self,
+        client,
+        fake_tts,
+        tmp_path,
     ):
         """At MAX_QUEUE_ATTEMPTS, /queue must NOT spawn another
         synthesis task; it just reports the failure and stops."""
@@ -348,7 +406,8 @@ class TestQueue:
 
         try:
             r = client.get(
-                "/v1/queue", params={"text": "hi", "engine": "fake"},
+                "/v1/queue",
+                params={"text": "hi", "engine": "fake"},
             )
             assert r.status_code == 200
             body = r.json()
@@ -367,7 +426,10 @@ class TestQueue:
         assert r.status_code == 404
 
     def test_queue_peek_does_not_spawn_synthesis(
-        self, client, fake_tts, tmp_path,
+        self,
+        client,
+        fake_tts,
+        tmp_path,
     ):
         """`peek=true` returns ready=false on a cold cache without
         kicking off a background synthesis task. Used by trunk to
@@ -393,7 +455,11 @@ class TestQueue:
         assert not fake_tts._cache_path_override.exists()
 
     def test_queue_peek_returns_path_when_cached(
-        self, client, fake_tts, tmp_path, monkeypatch,
+        self,
+        client,
+        fake_tts,
+        tmp_path,
+        monkeypatch,
     ):
         monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
         warm = tmp_path / "warm.wav"
@@ -427,7 +493,10 @@ class TestCache:
         assert r.content.startswith(b"RIFF")
 
     def test_cache_path_outside_cache_dir_returns_403(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
         outside = tmp_path.parent / "outside.wav"
@@ -439,7 +508,10 @@ class TestCache:
             outside.unlink(missing_ok=True)
 
     def test_cache_path_traversal_returns_403(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
         traversal = str(tmp_path / ".." / "etc" / "passwd")
@@ -447,16 +519,23 @@ class TestCache:
         assert r.status_code == 403
 
     def test_cache_missing_file_returns_404(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
         r = client.get(
-            "/v1/cache", params={"path": str(tmp_path / "missing.wav")},
+            "/v1/cache",
+            params={"path": str(tmp_path / "missing.wav")},
         )
         assert r.status_code == 404
 
     def test_cache_symlink_to_outside_returns_403(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         """A symlink that LIVES inside the cache dir but POINTS at a
         file outside it must be rejected — Path.resolve() follows the
@@ -474,7 +553,10 @@ class TestCache:
             outside.unlink(missing_ok=True)
 
     def test_cache_non_wav_extension_returns_403(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         """Even when the file is inside the cache dir, the suffix
         check rejects anything that isn't ``.wav``."""
@@ -486,7 +568,10 @@ class TestCache:
         assert "wav" in r.json()["detail"].lower()
 
     def test_cache_partial_write_tmp_file_returns_403(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         """The atomic-write window leaves a ``.wav.tmp`` sibling on
         disk during synthesis. The suffix check rejects those so a
@@ -498,7 +583,10 @@ class TestCache:
         assert r.status_code == 403
 
     def test_cache_uppercase_wav_extension_allowed(
-        self, client, tmp_path, monkeypatch,
+        self,
+        client,
+        tmp_path,
+        monkeypatch,
     ):
         monkeypatch.setenv("TALKSHOW_CACHE_DIR", str(tmp_path))
         cached = tmp_path / "loud.WAV"

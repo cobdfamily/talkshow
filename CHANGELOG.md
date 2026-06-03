@@ -5,6 +5,54 @@ Versioning: SemVer; pre-1.0 minor bumps may break.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-02
+
+### Added
+
+- **Second TTS backend: espeak-ng (offline, no credentials).**
+  A new `EspeakTTS` plugin (`?engine=espeak`) shells out to
+  the `espeak-ng` CLI -- the fleet's no-cloud fallback voice,
+  usable air-gapped / in CI / when the Azure key is absent.
+  It proves the `TTSPlugin` ABC takes a non-Azure engine
+  cleanly. **Azure stays the default** (blindhub.ca's
+  multilingual menus depend on it); espeak is opt-in.
+  - `espeak-ng` added to the talkshow image.
+  - Robustness: espeak writes to a short mkstemp name then
+    renames into the (128-char-hashed) cache path -- espeak
+    silently no-ops on `-w` paths over ~242 chars, which a
+    deep cache root would hit.
+  - New env: `TALKSHOW_ESPEAK_BIN`, `ESPEAK_DEFAULT_VOICE` /
+    `_LANGUAGE` / `_RATE` / `_PITCH`.
+
+### Tests
+
+- New `tests/test_espeak_tts.py`: identity, loader discovery
+  (espeak + azure), deterministic cache path, prosody-arg
+  mapping, and -- with the real binary -- WAV synthesis +
+  cache-hit (no re-synthesis clobber).
+
+## [1.0.6] - 2026-06-02
+
+### Added
+
+- **`X-Request-Id` middleware for end-to-end tracing.**
+  talkshow now echoes the caller's `X-Request-Id` (trunk
+  forwards it on the trunk -> talkshow hop, v5.12.0) or
+  mints one when absent, returns it on the response, and
+  logs it on the `talkshow.access` logger -- so a single
+  inbound call correlates across trunk and talkshow.
+- Fleet-standard `X-Service` / `X-Service-Version` response
+  headers on every response (matches trunk, dispatch,
+  brian).
+- `talkshow.main.__version__` exposed and used as the
+  FastAPI app version (was a hardcoded literal).
+
+### Tests
+
+- 3 new in `tests/test_http_api.py`: echoes a supplied
+  request id, mints one when absent, emits the service
+  headers.
+
 ## [1.0.5] - 2026-05-03
 
 ### Changed

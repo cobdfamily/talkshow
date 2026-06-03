@@ -31,6 +31,13 @@ RUN groupadd --system --gid 1000 talkshow \
 
 WORKDIR /app
 
+# espeak-ng: the offline TTS backend (EspeakTTS plugin, v1.1.0).
+# No-credentials fallback voice + the engine used for air-gapped
+# dev / CI. Azure stays the default for production menus.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends espeak-ng \
+ && rm -rf /var/lib/apt/lists/*
+
 # Bring the venv + source over from the build stage.
 COPY --from=builder --chown=talkshow:talkshow /app /app
 
