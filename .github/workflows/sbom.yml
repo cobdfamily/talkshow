@@ -40,7 +40,7 @@ env:
 
 jobs:
   sbom:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
@@ -51,8 +51,8 @@ jobs:
         run: uv sync --frozen
       - name: Generate CycloneDX SBOM
         run: |
-          # uvx runs cyclonedx-py directly; self-hosted runner lacks ~/.local/bin on PATH
-          uvx --from cyclonedx-bom cyclonedx-py environment .venv/bin/python \
+          uv tool install cyclonedx-bom
+          cyclonedx-py environment .venv/bin/python \
             --pyproject pyproject.toml \
             --output-reproducible \
             --output-file bom.cdx.json
